@@ -29,6 +29,34 @@ macOS only. You need two things.
 - Xcode Command Line Tools (`xcode-select --install`)
 - Claude Desktop
 
+There are two ways to install. Use only one. With both, the hooks run twice.
+
+### Option 1. Plugin
+
+Run the command below in a terminal. It needs Claude Code 2.1.275 or later.
+
+```bash
+claude plugin install mochipet --marketplace lyeongl/mochipet
+```
+
+- `/pet on` works from the next session you open. The first time, it takes 10–20 seconds to build the pet app.
+- The five hooks and the `/pet` skill come with the plugin. `hooks` in `~/.claude/settings.json` is not changed.
+- If you already installed with Option 2, run `./install.sh uninstall` first.
+
+Update and remove it with the commands below.
+
+```bash
+claude plugin update mochipet@mochipet
+```
+
+```bash
+claude plugin uninstall mochipet@mochipet
+```
+
+### Option 2. git clone
+
+Use this if you don't have the `claude` command or want to use your own art.
+
 ```bash
 git clone https://github.com/lyeongl/mochipet.git
 ```
@@ -102,7 +130,7 @@ While a pet is on screen, a paw icon appears in the menu bar. It changes all pet
 
 ![cat](gallery/cat.png)
 
-To use your own art, follow these steps.
+To use your own art, follow these steps. This works when you installed with Option 2.
 
 1. Make `sprites/<kind>/` in this folder.
 2. Add square PNGs named after the frames in the pictures above (`idle_0.png`, `walk_0.png` …).

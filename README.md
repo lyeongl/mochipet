@@ -29,6 +29,34 @@ macOS 전용입니다. 아래 두 가지가 필요합니다.
 - Xcode Command Line Tools (`xcode-select --install`)
 - Claude 데스크탑
 
+설치 방법은 두 가지입니다. 하나만 쓰세요. 둘 다 쓰면 훅이 두 번 걸립니다.
+
+### 방법 1. 플러그인
+
+터미널에서 아래 명령을 실행합니다. Claude Code 2.1.275 이상이 필요합니다.
+
+```bash
+claude plugin install mochipet --marketplace lyeongl/mochipet
+```
+
+- 새로 여는 세션부터 `/pet on` 을 쓸 수 있습니다. 처음 켤 때는 펫 앱을 빌드하느라 10~20초쯤 걸립니다.
+- 훅 5개와 `/pet` 스킬이 플러그인에 들어 있습니다. `~/.claude/settings.json` 의 `hooks` 는 고치지 않습니다.
+- 이미 방법 2 로 설치하셨다면 `./install.sh uninstall` 을 먼저 실행해 주세요.
+
+업데이트와 삭제는 아래 명령으로 합니다.
+
+```bash
+claude plugin update mochipet@mochipet
+```
+
+```bash
+claude plugin uninstall mochipet@mochipet
+```
+
+### 방법 2. git clone
+
+`claude` 명령이 없거나 직접 그린 그림을 쓰실 때 이 방법을 씁니다.
+
 ```bash
 git clone https://github.com/lyeongl/mochipet.git
 ```
@@ -102,7 +130,7 @@ Claude 세션에서 아래 명령을 입력합니다.
 
 ![cat](gallery/cat.png)
 
-직접 그린 그림을 쓰시려면 아래 순서로 하시면 됩니다.
+직접 그린 그림을 쓰시려면 아래 순서로 하시면 됩니다. 방법 2 로 설치했을 때 쓸 수 있습니다.
 
 1. 이 폴더에 `sprites/<종류>/` 를 만듭니다.
 2. 위 그림에 적힌 프레임 이름으로 정사각형 PNG 를 넣습니다 (`idle_0.png`, `walk_0.png` …).
