@@ -2,7 +2,7 @@ import AppKit
 
 // MochiPet: Claude Code 세션마다 펫 하나를 띄운다.
 // 세션 파일 ~/.claude/mochipet/<세션 id> 는 여섯 줄이다:
-//   상태(idle·working·waiting·done), 작업 폴더, 데스크탑 세션 id, 색(색상환 위치 0~1. 비어 있으면 그 종류의 기본 색), 이름, 종류
+//   상태(idle·working·waiting·done), 작업 폴더, 데스크탑 세션 id(터미널에서 켰으면 그 터미널 앱의 번들 id), 색(색상환 위치 0~1. 비어 있으면 그 종류의 기본 색), 이름, 종류
 //
 //   --on [--name 이름]   펫을 켠다                 (이 넷은 /pet 스킬이 부른다.
 //   --off                펫을 끈다                  세션 id 는 Claude Code 가 주는 환경변수에서 읽는다)
@@ -121,6 +121,9 @@ if args.contains("--selftest") {
                  && coatName("크림", kind: "cat") == "cream" && coatName("은회색", kind: "dog") == "silver" && coatName("pug", kind: "cat") == nil
                  && coatName("골든", kind: "cat") == "golden" && coatName("siamese", kind: "dog") == nil
                  && coatName("시바", kind: "dog") == "shiba" && coatName("golden", kind: "bunny") == "golden", "이름으로 고르는 색이 틀림")
+    precondition(host(["CLAUDE_CODE_HOST_SESSION_ID": "local_a", "__CFBundleIdentifier": "com.apple.Terminal"]) == "local_a"
+                 && host(["__CFBundleIdentifier": "com.googlecode.iterm2"]) == "com.googlecode.iterm2"
+                 && host(["__CFBundleIdentifier": "a b.c"]) == "" && host([:]) == "", "세션을 켠 곳을 잘못 적음")
     precondition(hueLine("default", except: dir) == "" && hueLine("분홍", except: dir) == String(350.0 / 360) && hueLine("-90", except: dir) == "0.75"
                  && hueLine("nope", except: dir) == nil && hueLine(nil, except: dir) != nil, "색 줄이 틀림")
     var flier = Pet(pos: .zero); grounded = true; flier.start("fly"); let stayed = flier.name; flier.start("climb"); let low = flier.name; grounded = false; flier.start("balloon")
@@ -154,7 +157,7 @@ if let cmd = args.dropFirst().first, ["--on", "--off", "--color", "--name", "--k
         // 스킬은 턴 도중에 불리므로 working 으로 시작한다
         // 종류와 색을 무작위로 정한다. 종류를 먼저 뽑고, 그 종류가 쓰는 색 중에서 색을 뽑는다
         let kind = randomKind(used: ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []).compactMap(readSession).map { $0[5] })
-        l = ["working", fm.currentDirectoryPath, env["CLAUDE_CODE_HOST_SESSION_ID"] ?? "", randomLook(kind: kind, used: usedLooks(), colorFirst: colorFirst), "", kind]
+        l = ["working", fm.currentDirectoryPath, host(env), randomLook(kind: kind, used: usedLooks(), colorFirst: colorFirst), "", kind]
     }
     if cmd == "--color" {
         let want = value(after: "--color")?.lowercased()
@@ -194,13 +197,22 @@ if args.count >= 3, args[1] == "--hook" {
     writeSession(f, l); exit(0)
 }
 
-// 펫을 누르면 그 세션의 Claude 데스크탑 채팅을 연다.
+// 세션 파일 셋째 줄에 적을 값. Claude 데스크탑에서 켰으면 데스크탑 세션 id 이고,
+// 터미널에서 켰으면 그 터미널 앱의 번들 id 다 (앱이 띄운 프로세스에는 macOS 가 __CFBundleIdentifier 를 넣어 준다).
+func host(_ env: [String: String]) -> String {
+    if let s = env["CLAUDE_CODE_HOST_SESSION_ID"] { return s }
+    let app = env["__CFBundleIdentifier"] ?? ""
+    return app.contains(".") && app.count <= 100 && app.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || ".-_".contains($0)) } ? app : ""
+}
+
+// 펫을 누르면 그 세션의 Claude 데스크탑 채팅을 연다. 터미널에서 켠 펫은 그 터미널 앱을 앞으로 가져온다.
+// ponytail: 터미널은 앱까지만 찾는다. 탭이나 창까지 찾으려면 iTerm2·터미널의 AppleScript 로 tty 를 고른다.
 // 세션을 지정하는 링크는 문서에 없다. Claude 데스크탑 4.23118.1 의 URL 처리 코드에서 확인한 형식이라 버전이 바뀌면 안 열릴 수 있다.
 let claudeApp = "com.anthropic.claudefordesktop"   // Claude 데스크탑의 번들 id
 func openChat(_ host: String) {
     if host.hasPrefix("local_"), safe(host), let link = URL(string: "claude://code/continue?session=\(host)") {
         NSWorkspace.shared.open(link)
-    } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: claudeApp) {   // 설치된 위치가 어디든 찾아서 연다
+    } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: host.contains(".") ? host : claudeApp) {   // 설치된 위치가 어디든 찾아서 연다
         NSWorkspace.shared.open(app)
     }
 }
@@ -230,6 +242,7 @@ final class Sessions: NSObject {
     var shown: [String: [String]] = [:]   // 펫에 반영해 둔 세션 파일 내용
     var titles: [String: String] = [:]    // Claude 데스크탑의 세션 제목
     var gone: [String: Int] = [:]         // 데스크탑 세션 파일이 연달아 안 보인 횟수
+    var front: (app: String?, since: Date) = (nil, .distantPast)   // 지금 맨 앞에 있는 앱과 그 앱이 앞으로 온 시각
     var desktop: [URL: (at: Date, title: String?, focused: Date, archived: Bool)] = [:]   // 읽어 둔 데스크탑 세션 파일. 파일이 바뀌면 다시 읽는다
 
     // 데스크탑 세션 파일은 수백 KB 라서 바뀌었을 때만 다시 읽는다.
@@ -321,7 +334,9 @@ final class Sessions: NSObject {
     // 보관 표시(isArchived)도 문서에 없는 값이다 (4.23118.1 에서 확인).
     @objc func watchDesktop() {
         let files = desktopFiles()
-        let claudeInFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == claudeApp
+        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        if app != front.app { front = (app, Date()) }
+        let claudeInFront = app == claudeApp
         for (id, l) in shown {
             guard let u = files.first(where: { $0.lastPathComponent == l[2] + ".json" }) else {
                 // 데스크탑에서 연 세션인데 그 파일이 없으면 세션을 지운 것이다. 쓰는 도중이라 잠깐 안 보이는 것일 수 있어서
@@ -330,6 +345,8 @@ final class Sessions: NSObject {
                     gone[id, default: 0] += 1
                     if gone[id]! >= 5, let f = file(id) { try? fm.removeItem(at: f) }
                 }
+                // 터미널에서 켠 펫: 끝난 뒤에 그 터미널 앱으로 넘어왔으면 본 것이다. 끝날 때 이미 그 앱에 있었으면 펫을 누르거나 다음 프롬프트를 보낼 때까지 축하한다
+                if l[0] == "done", l[2] == app, let f = file(id), front.since > modified(f) { acknowledge(id) }
                 continue
             }
             gone[id] = nil
