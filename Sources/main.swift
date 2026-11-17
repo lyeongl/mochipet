@@ -453,8 +453,8 @@ final class Card: NSObject, NSPopoverDelegate {
         self.id = id
         guard let r = current() else { return }
         spot.setFrame(from, display: false); spot.orderFrontRegardless()
-        let vc = NSViewController(); vc.view = view(for: r)
-        pop.contentViewController = vc; pop.animates = false; pop.delegate = self; pop.contentSize = vc.view.fittingSize
+        if pop.contentViewController == nil { let vc = NSViewController(); vc.view = box; pop.contentViewController = vc; pop.animates = false; pop.delegate = self }
+        put(r)
         pop.show(relativeTo: spot.contentView!.bounds, of: spot.contentView!, preferredEdge: .maxX)
         NSApp.activate(ignoringOtherApps: true)
         watch()
@@ -481,9 +481,15 @@ final class Card: NSObject, NSPopoverDelegate {
 
     // 이 펫의 지금 모습을 세션 파일에서 바로 읽는다. 다음 sync 를 기다리지 않아서 누르자마자 판이 바뀐다
     func current() -> Row? { file(id).flatMap(readSession).map { bar.row(id, $0) } }
-    func reload() {
-        guard pop.isShown, let r = current() else { return }
-        let v = view(for: r); pop.contentViewController?.view = v; pop.contentSize = v.fittingSize
+    func reload() { if pop.isShown, let r = current() { put(r) } }
+    // 판의 틀(box)은 그대로 두고 내용만 갈아 끼운다. 판에 얹은 뷰를 통째로 바꾸면 판이 쪼그라든 채로 남는다
+    let box = NSView()
+    func put(_ r: Row) {
+        box.subviews.forEach { $0.removeFromSuperview() }
+        let v = view(for: r)
+        box.addSubview(v)
+        NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: box.topAnchor), v.leadingAnchor.constraint(equalTo: box.leadingAnchor)])
+        pop.contentSize = v.fittingSize
     }
     @objc func pickKind(_ c: NSSegmentedControl) { setKind(id, builtinKinds[c.selectedSegment]); reload() }
     @objc func shuffle() { recolor(id, ""); reload() }
