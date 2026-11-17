@@ -342,6 +342,10 @@ func recolor(_ id: String, _ want: String) {
           let line = coatName(want, kind: now[5]) ?? (coats.contains { $0.en == want } ? nil : hueLine(want.isEmpty ? nil : want, kind: now[5], except: f)) else { return }
     now[3] = line; writeSession(f, now)
 }
+func setLook(_ id: String, _ line: String) {        // 색 줄에 적을 값을 그대로 적는다 (우클릭 판의 칸을 눌렀을 때)
+    guard let f = file(id), var now = readSession(f) else { return }
+    now[3] = line; writeSession(f, now)
+}
 func setKind(_ id: String, _ k: String) {
     guard let f = file(id), var now = readSession(f) else { return }
     now[5] = k
@@ -356,11 +360,13 @@ func portrait(kind: String, coat: String, hue: CGFloat?) -> NSImage {
     if let p = portraits[key] { return p }
     let img = drawn("idle_0", hue: hue, kind: kind, coat: coat)
     guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return img }
-    let rep = NSBitmapImageRep(cgImage: cg)
-    var x0 = rep.pixelsWide, x1 = -1, y0 = rep.pixelsHigh, y1 = -1
-    for y in 0..<rep.pixelsHigh {
-        for x in 0..<rep.pixelsWide where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 { x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y) }
-    }
+    // 알파만 8비트로 다시 그려서 바이트를 바로 읽는다. 픽셀마다 색을 묻는 것보다 훨씬 빠르다
+    let w = cg.width, h = cg.height
+    var alpha = [UInt8](repeating: 0, count: w * h)
+    guard let ctx = CGContext(data: &alpha, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return img }
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    var x0 = w, x1 = -1, y0 = h, y1 = -1
+    for y in 0..<h { for x in 0..<w where alpha[y * w + x] > 12 { x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y) } }
     guard x1 >= x0, let cut = cg.cropping(to: CGRect(x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1)) else { return img }
     let p = NSImage(cgImage: cut, size: NSSize(width: cut.width, height: cut.height))
     portraits[key] = p
@@ -379,10 +385,9 @@ func appIcon(_ side: CGFloat) -> NSImage {
 }
 
 // 펫 우클릭 판: 머리말(얼굴, 이름, 상태), 종류, 무늬, 컬러, 색 섞기, 이 펫 끄기. 메뉴 막대 판과 같은 모양으로 그린다
-final class Card: NSObject {
+final class Card: NSObject, NSPopoverDelegate {
     let pop = NSPopover()
     var id = ""
-    weak var anchor: NSView?
 
     // 판을 그 펫의 지금 상태로 만든다. 무늬는 그 종류가 쓰는 것만 그 종류의 얼굴로 보여 준다
     func view(for r: Row) -> NSView {
@@ -407,30 +412,31 @@ final class Card: NSObject {
         kinds.selectedSegment = builtinKinds.firstIndex(of: r.kind) ?? 0
         add(bar.line(bar.text("종류"), kinds))
 
-        // 한 줄에 일곱 칸. 칸마다 얼굴과 이름을 두고, 지금 색인 칸에 테두리를 두른다
-        func grid(_ title: String, _ items: [(name: String, want: String, coat: String, hue: CGFloat?)]) {
+        // 한 줄에 다섯 칸. 칸마다 얼굴과 이름을 두고, 지금 색인 칸에 테두리를 두른다
+        func grid(_ title: String, _ items: [(name: String, line: String)]) {     // line 은 세션 파일의 색 줄에 적을 값이다
             add(bar.text(title, 11.5, gray: true))
-            for start in stride(from: 0, to: items.count, by: 7) {
-                let cells: [NSView] = (start..<start + 7).map { i in
+            for start in stride(from: 0, to: items.count, by: 5) {
+                let cells: [NSView] = (start..<start + 5).map { i in
                     guard i < items.count else { return NSView() }
-                    let it = items[i], on = picked(it.want, line: r.look) || it.want == lookName(r.look, kind: r.kind)
-                    let name = bar.text(it.name, 9.5, gray: true); name.alignment = .center
+                    let it = items[i], on = lookName(r.look, kind: r.kind) == it.line
+                    let name = bar.text(it.name, 10, gray: true); name.alignment = .center
                     if on { name.textColor = .controlAccentColor }
-                    let col = NSStackView(views: [face(34, coat: it.coat, hue: it.hue), name]); col.orientation = .vertical; col.spacing = 4
+                    let col = NSStackView(views: [face(46, coat: Double(it.line) == nil ? it.line : "", hue: Double(it.line).map { CGFloat($0) }), name]); col.orientation = .vertical; col.spacing = 4
                     let cell = RowView(); cell.wantsLayer = true; cell.layer?.cornerRadius = 8
                     if on { cell.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.13).cgColor; cell.layer?.borderColor = NSColor.controlAccentColor.cgColor; cell.layer?.borderWidth = 1.5 }
                     cell.addSubview(col); col.translatesAutoresizingMaskIntoConstraints = false
                     NSLayoutConstraint.activate([col.centerXAnchor.constraint(equalTo: cell.centerXAnchor), col.topAnchor.constraint(equalTo: cell.topAnchor, constant: 4),
                                                  col.bottomAnchor.constraint(equalTo: cell.bottomAnchor, constant: -5)])
-                    cell.onClick = { [weak self] in recolor(r.id, it.want); self?.reload(soon: true) }
+                    cell.onClick = { [weak self] in setLook(r.id, it.line); self?.reload() }
                     return cell
                 }
                 let row = NSStackView(views: cells); row.distribution = .fillEqually; row.spacing = 2
                 add(row)
             }
         }
-        grid("무늬", coats.filter { wears(r.kind, $0) }.map { ($0.ko, $0.en, $0.en, nil) })
-        grid("컬러", colors.map { ($0.ko, $0.en, "", CGFloat($0.degrees / 360)) })
+        // README 의 색상 그림과 같은 순서다. 무늬는 그 종류가 쓰는 것만, 컬러는 흰색, 색상환 색, 크림 순이다
+        grid("무늬", coats.filter { wears(r.kind, $0) }.map { ($0.ko, $0.en) })
+        grid("컬러", [("흰색", "plain")] + colors.map { ($0.ko, String($0.degrees / 360)) } + [("크림", String(creamHue))])
         rule()
 
         let mix = NSButton(title: "색 섞기", image: bar.symbol("shuffle"), target: self, action: #selector(shuffle))
@@ -438,37 +444,54 @@ final class Card: NSObject {
         for b in [mix, off] { b.imagePosition = .imageLeading; b.bezelStyle = .rounded }
         let buttons = NSStackView(views: [mix, off]); buttons.distribution = .fillEqually; buttons.spacing = 8
         add(buttons)
-        // 메뉴 막대가 꽉 찬 화면에서는 발바닥 아이콘이 노치 뒤로 밀려 안 보이므로, 모든 펫의 설정을 여기서도 열 수 있게 한다
-        let all = NSButton(title: "모든 펫 설정…", target: self, action: #selector(openAll)); all.isBordered = false; all.contentTintColor = .secondaryLabelColor
-        all.font = .systemFont(ofSize: 12)
-        add(all)
         return root
     }
 
+    // 판은 펫 자리에 깔아 둔 투명한 창에 붙인다. 펫 창에 바로 붙이면 펫이 걸어갈 때 판이 따라 움직이거나 저절로 닫힌다
     func show(_ id: String, at v: NSView) {
-        self.id = id; anchor = v
-        guard let r = bar.rows().first(where: { $0.id == id }) else { return }
+        guard let from = v.window?.frame else { return }
+        self.id = id
+        guard let r = current() else { return }
+        spot.setFrame(from, display: false); spot.orderFrontRegardless()
         let vc = NSViewController(); vc.view = view(for: r)
-        pop.contentViewController = vc; pop.behavior = .transient; pop.contentSize = vc.view.fittingSize
-        pop.show(relativeTo: v.bounds, of: v, preferredEdge: .maxX)
-        NSApp.activate(ignoringOtherApps: true)              // 판 밖을 누르면 닫히게 한다
+        pop.contentViewController = vc; pop.animates = false; pop.delegate = self; pop.contentSize = vc.view.fittingSize
+        pop.show(relativeTo: spot.contentView!.bounds, of: spot.contentView!, preferredEdge: .maxX)
+        NSApp.activate(ignoringOtherApps: true)
+        watch()
     }
-    // 바꾼 것이 세션 파일에서 펫으로 넘어온 뒤(다음 sync)에 판을 다시 그린다
-    func reload(soon: Bool) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + (soon ? 0.6 : 0)) { [weak self] in
-            guard let self = self, self.pop.isShown, let r = bar.rows().first(where: { $0.id == self.id }) else { return }
-            let v = self.view(for: r); self.pop.contentViewController?.view = v; self.pop.contentSize = v.fittingSize
-        }
+    lazy var spot: NSPanel = {
+        let w = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        w.isOpaque = false; w.backgroundColor = .clear; w.ignoresMouseEvents = true; w.level = .floating; w.contentView = NSView()
+        return w
+    }()
+
+    // 판 밖을 누르면 닫는다. 펫 앱은 Dock 에 없는 앱이라 판이 알아서 닫히지 않을 때가 있어서 직접 지켜본다
+    var watchers: [Any] = []
+    func watch() {
+        unwatch()
+        let downs: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+        if let g = NSEvent.addGlobalMonitorForEvents(matching: downs, handler: { [weak self] _ in self?.pop.close() }) { watchers.append(g) }
+        if let l = NSEvent.addLocalMonitorForEvents(matching: downs, handler: { [weak self] e in
+            if let me = self, e.window != me.pop.contentViewController?.view.window { me.pop.close() }
+            return e
+        }) { watchers.append(l) }
     }
-    @objc func pickKind(_ c: NSSegmentedControl) { setKind(id, builtinKinds[c.selectedSegment]); reload(soon: true) }
-    @objc func shuffle() { recolor(id, ""); reload(soon: true) }
+    func unwatch() { watchers.forEach(NSEvent.removeMonitor); watchers = [] }
+    func popoverDidClose(_ n: Notification) { unwatch() }
+
+    // 이 펫의 지금 모습을 세션 파일에서 바로 읽는다. 다음 sync 를 기다리지 않아서 누르자마자 판이 바뀐다
+    func current() -> Row? { file(id).flatMap(readSession).map { bar.row(id, $0) } }
+    func reload() {
+        guard pop.isShown, let r = current() else { return }
+        let v = view(for: r); pop.contentViewController?.view = v; pop.contentSize = v.fittingSize
+    }
+    @objc func pickKind(_ c: NSSegmentedControl) { setKind(id, builtinKinds[c.selectedSegment]); reload() }
+    @objc func shuffle() { recolor(id, ""); reload() }
     @objc func dismiss() { petOff(id); pop.close() }
-    @objc func openAll() { pop.close(); if let v = anchor { bar.open(from: v, edge: .maxX) } }
 }
 
 // 메뉴 막대 아이콘. 누르면 판이 열린다: 세션 목록, 모으기·색 섞기, 날지 않기·모두 숨기기·랜덤, 투명도·크기.
 // 투명도, 크기, 날지 않기는 UserDefaults 에 남기고, 숨김은 남기지 않는다. 펫이 하나도 없으면 앱이 끝나므로 아이콘도 사라진다.
-// 메뉴 막대가 꽉 찬 화면에서는 아이콘이 노치 뒤로 밀려 안 보이므로, 펫 우클릭 판의 "모든 펫 설정" 에서도 이 판을 연다.
 // 판의 세션 한 줄. since 는 지금 상태가 된 시각이고, host 는 눌렀을 때 열 곳이다 (세션 파일 셋째 줄)
 struct Row { var id, name, state: String, since: Date, kind, look: String, host: String    // look 은 세션 파일의 색 줄 (무늬 이름이나 색상환 위치)
     var coat: String { Double(look) == nil ? look : "" }
@@ -494,7 +517,7 @@ final class Bar: NSObject {
     lazy var item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var sliders: [(view: NSSlider, now: () -> Double, text: NSTextField, say: () -> String)] = []   // 슬라이더, 지금 값, 값을 적는 글자
     let pop = NSPopover()
-    let list = TopDown(), scroll = NSScrollView(), subtitle = NSTextField(labelWithString: "")
+    let list = TopDown(), scroll = NSScrollView(), subtitle = NSTextField(labelWithString: ""), more = NSTextField(labelWithString: "")
     let ground = NSSwitch(), hide = NSSwitch(), random = NSSegmentedControl(labels: ["무늬", "컬러"], trackingMode: .selectOne, target: nil, action: nil)
     var times: [(since: Date, text: NSTextField)] = []      // 줄마다의 지난 시간. 줄을 다시 만들지 않고 글자만 고친다
     var listed = "", listHeight: NSLayoutConstraint?
@@ -554,7 +577,8 @@ final class Bar: NSObject {
         scroll.documentView = list; scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         list.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
         listHeight = scroll.heightAnchor.constraint(equalToConstant: rowHeight); listHeight?.isActive = true
-        add(scroll); rule()
+        more.font = .systemFont(ofSize: 11.5); more.textColor = .secondaryLabelColor; more.alignment = .center
+        add(scroll); add(more); rule()
 
         let gatherAll = NSButton(title: "모으기", image: symbol("display"), target: self, action: #selector(gather))
         let mix = NSButton(title: "색 섞기", image: symbol("shuffle"), target: self, action: #selector(shuffleAll))
@@ -581,10 +605,11 @@ final class Bar: NSObject {
     // 떠 있는 펫을 판에 올릴 줄로 바꾼다. 지난 시간은 세션 파일이 마지막으로 바뀐 시각부터 센다
     // ponytail: 색이나 이름을 바꿔도 파일이 바뀌어서 시간이 0 으로 돌아간다. 거슬리면 상태가 바뀐 시각을 파일에 따로 적는다
     func rows() -> [Row] {
-        sessions.shown.map { id, l in
-            Row(id: id, name: sessions.pets[id]?.label ?? "", state: l[0], since: file(id).map(modified) ?? Date(),
-                kind: l[5].isEmpty ? defaultKind : l[5], look: l[3], host: l[2])
-        }
+        sessions.shown.map { row($0, $1) }
+    }
+    func row(_ id: String, _ l: [String]) -> Row {
+        Row(id: id, name: sessions.pets[id]?.label ?? "", state: l[0], since: file(id).map(modified) ?? Date(),
+            kind: l[5].isEmpty ? defaultKind : l[5], look: l[3], host: l[2])
     }
 
     // 세션 목록과 머리말을 채운다. 줄의 내용이 그대로면 지난 시간만 고친다 (스크롤 자리가 유지된다)
@@ -616,18 +641,17 @@ final class Bar: NSObject {
                 list.addArrangedSubview(v); v.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
             }
             listHeight?.constant = rowHeight * CGFloat(min(max(rows.count, 1), maxRows))
+            more.stringValue = "⌄ \(rows.count - maxRows)마리 더 (스크롤)"; more.isHidden = rows.count <= maxRows   // 목록에 다 안 보일 때만 알린다
         }
         for t in times { t.text.stringValue = ago(t.since) }
     }
 
     @objc func toggle() {
-        if pop.isShown { pop.close() } else if let b = item.button { open(from: b, edge: .minY) }
-    }
-    // 판을 연다. 메뉴 막대 아이콘에서도, 펫 우클릭 판의 "모든 펫 설정" 에서도 연다
-    func open(from v: NSView, edge: NSRectEdge) {
+        guard let b = item.button else { return }
+        if pop.isShown { pop.close(); return }
         fill(rows()); refresh()
         pop.contentSize = panel.fittingSize
-        pop.show(relativeTo: v.bounds, of: v, preferredEdge: edge)
+        pop.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
         NSApp.activate(ignoringOtherApps: true)              // 판 밖을 누르면 닫히게 한다
     }
 

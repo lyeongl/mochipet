@@ -125,7 +125,7 @@ func exportGallery(to dir: URL) throws {
 }
 
 // 메뉴 막대의 발바닥 아이콘과 거기서 열리는 판을 그린다. 판은 앱이 쓰는 뷰(main.swift 의 Bar.panel)를 그대로 찍는다.
-// 화면을 찍은 그림은 다른 아이콘과 뒤 배경이 같이 찍혀서, 예시 세션 셋을 넣은 판만 따로 찍는다
+// 화면을 찍은 그림은 다른 아이콘과 뒤 배경이 같이 찍혀서, 예시 세션 일곱을 넣은 판만 따로 찍는다
 // 화면 밖 창에 뷰를 얹어서 밝은 모양으로 찍는다
 private func snapshot(_ v: NSView) -> NSBitmapImageRep {
     _ = NSApplication.shared
@@ -159,9 +159,9 @@ private func contextPicture() -> NSBitmapImageRep {
 private func menuPicture() -> NSBitmapImageRep {
     let b = Bar(), t = Date()
     scale = 1; opacity = 1; grounded = false; hidden = false     // 저장해 둔 설정과 상관없이 같은 그림이 나오게 한다
-    b.fill([Row(id: "a", name: "결제 버그 수정", state: "waiting", since: t - 182, kind: "bunny", look: "", host: ""),
-            Row(id: "b", name: "mochipet", state: "working", since: t - 41, kind: "dog", look: "", host: ""),
-            Row(id: "c", name: "문서 정리", state: "done", since: t - 720, kind: "cat", look: "", host: "")])
+    let sample: [(String, String, Double, String, String)] = [("결제 버그 수정", "waiting", 182, "bunny", ""), ("배포 스크립트", "waiting", 18, "cat", "golden"), ("mochipet", "working", 41, "dog", ""),
+        ("infra-admin", "working", 130, "bunny", "ivory"), ("로그 조사", "working", 420, "dog", "shiba"), ("문서 정리", "done", 720, "cat", ""), ("테스트 추가", "idle", 3700, "bunny", "cream")]
+    b.fill(sample.enumerated().map { i, x in Row(id: "\(i)", name: x.0, state: x.1, since: t - x.2, kind: x.3, look: x.4, host: "") })   // 다섯 줄을 넘겨서 "더" 표시가 보이게 한다
     let v = b.panel
     b.refresh(); b.random.selectedSegment = 0
     let shot = snapshot(v)
@@ -172,7 +172,7 @@ private func menuPicture() -> NSBitmapImageRep {
         if let paw = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) {
             paw.draw(in: NSRect(x: w / 2 - 14, y: h - 15 - paw.size.height / 2, width: paw.size.width, height: paw.size.height))
         }
-        ("1" as NSString).draw(at: NSPoint(x: w / 2 + 6, y: h - 23), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 12), .foregroundColor: NSColor.systemOrange])
+        ("2" as NSString).draw(at: NSPoint(x: w / 2 + 6, y: h - 23), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 12), .foregroundColor: NSColor.systemOrange])
         panel(shot, in: NSRect(x: 12, y: 16, width: v.bounds.width, height: v.bounds.height))
     }
 }
