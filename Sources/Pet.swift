@@ -5,7 +5,7 @@ import AppKit
 // 바라보는 방향(flip)은 상태로 들고 다닌다. 다른 창 위에 올라서는 것은 원본에 없는 기능이다.
 
 struct Action {
-    var frames: [String]            // 스프라이트 이름. sprites/<이름>.png 가 있으면 그 파일을 쓴다
+    var frames: [String]            // 프레임 이름 (looks 의 자세 이름)
     var v: CGFloat = 0              // 틱당 전진량. 바라보는 쪽으로 움직인다
     var dy: CGFloat = 0             // 틱당 상승량 (AppKit 좌표라 위쪽이 +)
     var accel: CGFloat = 0          // 틱마다 dy 에 더 쌓이는 양. 음수면 중력처럼 점점 빨리 떨어진다
@@ -109,7 +109,7 @@ let actions: [String: Action] = [
 
 let leaping: Set = ["crouch", "leap", "perch", "hopoff"]   // 머리를 밟고 넘어가는 동작들
 let flying: Set = ["fly", "float", "balloon", "climb"]     // 바닥을 떠나는 동작들: 날기, 창 위에서 날아 내려오기, 풍선 타기, 창 타고 오르기
-var grounded = false                                        // 켜면 바닥에만 있는다: flying 동작을 고르지 않고, 창 윗변을 발판으로 치지 않는다. 메뉴바 아이콘의 "날지 않기" 에서 고른다
+var grounded = false                                        // 켜면 바닥에만 있는다: flying 동작을 고르지 않고, 창 윗변을 발판으로 치지 않는다. 메뉴 막대 아이콘의 "날지 않기" 에서 고른다
 
 struct Pet {
     var pos: CGPoint
@@ -255,19 +255,15 @@ extension Pet {
 let size: CGFloat = 120              // 그림을 그리는 칸의 한 변. 화면에 띄우는 크기는 side 다
 
 // 화면에 띄우는 모습. 그림은 늘 size 칸에 그리고, 창을 side 크기로 띄워서 줄이거나 늘린다.
-// MochiPet 의 메뉴바 아이콘이 바꾼다. 바꾼 뒤에는 allPets 마다 applyLook() 을 부른다.
-var scale: CGFloat = 1               // 0.5 ~ 1.5. 메뉴바 슬라이더가 도트 한 칸이 화면 픽셀 정수 개가 되는 값으로 맞춰서 넣는다
+// MochiPet 의 메뉴 막대 아이콘이 바꾼다. 바꾼 뒤에는 allPets 마다 applyLook() 을 부른다.
+var scale: CGFloat = 1               // 0.5 ~ 1.5. 메뉴 막대 슬라이더가 도트 한 칸이 화면 픽셀 정수 개가 되는 값으로 맞춰서 넣는다
 var opacity: CGFloat = 1
 var hidden = false                   // 모든 펫을 숨기고 멈춘다
 var side: CGFloat { (size * scale).rounded() }
 // 떠 있는 펫들. 끈 펫의 창도 한동안 NSApp.windows 에 남아 있어서 host 로 걸러낸다.
-// 안 거르면 크기나 속도를 바꿀 때 끈 펫이 다시 나타나서, 타이머가 죽은 채로 멈춰 서 있게 된다.
+// 안 거르면 크기를 바꿀 때 끈 펫이 다시 나타나서, 타이머가 죽은 채로 멈춰 서 있게 된다.
 var allPets: [PetView] { NSApp.windows.compactMap { $0.contentView as? PetView }.filter { $0.host != nil } }
-var tick: Double {                   // 틱 간격(초). 작을수록 빠르다
-    get { UserDefaults.standard.object(forKey: "tick") as? Double ?? 0.15 }
-    set { UserDefaults.standard.set(newValue, forKey: "tick"); allPets.forEach { $0.restartTimer() } }
-}
-let spriteDir = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("sprites")
+let tick = 0.15                      // 틱 간격(초)
 
 // 프레임별 자세. 펫 종류가 달라도 같은 표를 쓴다. 왼쪽을 보는 모습으로 그린다.
 enum Eyes { case open, closed, wide, happy, dizzy }
@@ -445,7 +441,7 @@ func oklch(_ L: Double, _ C: Double, _ h: Double) -> NSColor {
 //   bunny   도트 토끼 (기본). 같은 도형을 30x30 칸에 계단지게 그린 뒤 키운다
 //   dog     도트 강아지. 토끼와 몸이 같고 귀·꼬리·주둥이만 다르다
 //   cat     도트 고양이. 토끼와 몸이 같고 귀·꼬리·입·수염만 다르다
-// 그 밖의 이름은 sprites/<종류>/ 폴더에 넣은 PNG 로 그려진다. PNG 도 없으면 기본 종류로 그린다.
+// 그 밖의 이름은 기본 종류로 그린다.
 let builtinKinds = ["bunny", "dog", "cat"]
 // 색상환으로 못 고르는 색. 색 줄에 숫자 대신 이름으로 적는다 (paintPet 참고). kinds 가 비어 있으면 모든 종류가 쓴다.
 // 이 색들이 무늬 줄이다. 흰색과 크림은 컬러 줄(색상환 색)에도 들어간다. 나머지는 실제 품종의 털 무늬를 담은 색이다.
@@ -972,9 +968,9 @@ func paintToy(_ k: Look, _ cx: CGFloat, _ fur: NSColor, _ edge: NSColor, _ line:
         lump(36, grip, 5, 4, edge, fur)
     case "door", "doorL", "doorM", "doorR":   // 문: 몸을 자르던 것을 되돌린다
         NSGraphicsContext.restoreGraphicsState()
-        // 문틀을 몸 앞에 다시 그린다. 그래서 몸이 문틀 뒤, 문 안쪽 앞에 있어 보인다.
-        // 강아지는 귀가 문보다 넓어서, 문 앞에 서 있을 때는 문틀을 앞에 그리지 않는다 (귀가 문틀에 잘려 보인다)
-        guard !dog || k.toy == "doorL" || k.toy == "doorR" else { break }
+        // 문을 드나드는 동안에만 문틀을 몸 앞에 다시 그린다. 그래서 몸이 문틀 뒤, 문 안쪽 앞에 있어 보인다.
+        // 문 앞에 서 있을 때는 그리지 않는다. 귀나 꼬리가 문보다 넓어서 문틀이 몸 위를 지나가 보인다
+        guard k.toy == "doorL" || k.toy == "doorR" else { break }
         dot(16, 0, 1, 24, doorRim); dot(100, 0, 1, 24, doorRim); dot(20, 92, 1, 1, doorRim); dot(96, 92, 1, 1, doorRim)
         dot(20, 96, 3, 1, doorRim); dot(88, 96, 3, 1, doorRim); dot(28, 100, 16, 1, doorRim)
         dot(12, 0, 24, 1, doorSill)
@@ -1130,10 +1126,10 @@ func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
         guard (w[kCGWindowAlpha as String] as? Double ?? 1) > 0, let b = w[kCGWindowBounds as String] as? NSDictionary,
               let q = CGRect(dictionaryRepresentation: b) else { continue }
         let r = CGRect(x: q.minX, y: primaryH - q.maxY, width: q.width, height: q.height)
-        if w[kCGWindowLayer as String] as? Int == 0 {          // 일반 창. Dock·메뉴바는 빠진다
+        if w[kCGWindowLayer as String] as? Int == 0 {          // 일반 창. Dock·메뉴 막대는 빠진다
             if r.width >= side { wins.append(r) }
         } else if w[kCGWindowOwnerName as String] as? String == "MochiPet", r.width == r.height, r.width >= 60,
-                  let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴바 아이콘과 구별된다
+                  let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴 막대 아이콘과 구별된다
             pets.append((id, r))
         }
     }
@@ -1146,7 +1142,7 @@ final class PetView: NSView {
     var hue: CGFloat? { didSet { cache = [:]; needsDisplay = true } }   // 몸 색. drawn() 참고
     var kind = defaultKind { didSet { cache = [:]; needsDisplay = true } }   // 펫 종류
     var coat = "" { didSet { cache = [:]; needsDisplay = true } }            // 무늬. 비어 있으면 hue 로 칠한다
-    var onKind: ((String) -> Void)?   // 우클릭 메뉴에서 종류를 골랐을 때
+    var onMenu: (() -> Void)?       // 우클릭했을 때
     var label = "" { didSet { hideTag() } }                             // 이름표 글자
     var nameTag: NSWindow?              // 떠 있는 이름표
     var onClick: (() -> Void)?      // 끌지 않고 눌렀다 뗐을 때
@@ -1162,7 +1158,7 @@ final class PetView: NSView {
     // 창을 둘 자리. 소수점 좌표에 두면 창이 픽셀 격자에 걸쳐 1pt 넓게 잡힌다.
     var origin: NSPoint { NSPoint(x: pet.pos.x.rounded(), y: pet.pos.y.rounded()) }
 
-    var area: CGRect {              // Dock 과 메뉴바를 뺀 영역
+    var area: CGRect {              // Dock 과 메뉴 막대를 뺀 영역
         let v = (window?.screen ?? NSScreen.main)!.visibleFrame
         return CGRect(x: v.minX, y: v.minY, width: v.width - side, height: v.height - side)
     }
@@ -1179,12 +1175,6 @@ final class PetView: NSView {
     }
 
     func begin() {
-        let m = NSMenu()                // 종류만 여기서 넣는다. 세션 이름, 모든 펫, 색, 끄기는 main.swift 가 끼워 넣는다
-        for (title, k) in [("토끼", "bunny"), ("강아지", "dog"), ("고양이", "cat")] {
-            let i = m.addItem(withTitle: title, action: #selector(pickKind(_:)), keyEquivalent: "")
-            i.target = self; i.representedObject = k
-        }
-        menu = m                    // 우클릭 메뉴
         pet.pos = CGPoint(x: .random(in: area.minX...area.maxX), y: area.maxY)   // 화면 위에서 떨어지며 등장한다
         window?.setFrameOrigin(origin)
         restartTimer()
@@ -1207,9 +1197,7 @@ final class PetView: NSView {
         if hidden { hideTag(); w.orderOut(nil) } else { w.orderFrontRegardless() }
     }
 
-    @objc func pickKind(_ i: NSMenuItem) {
-        if let k = i.representedObject as? String { onKind?(k) }
-    }
+    override func rightMouseDown(with e: NSEvent) { onMenu?() }
 
     func setMood(_ m: String) {
         pet.mood = m
@@ -1299,10 +1287,7 @@ final class PetView: NSView {
 
     func sprite(_ name: String) -> NSImage {
         if let i = cache[name] { return i }
-        // sprites/<종류>/<프레임>.png 가 있으면 그 그림을 쓴다. 그 종류에 없는 프레임은 idle_0 으로 대신한다.
-        let png = [kind + "/" + name, kind + "/idle_0"]
-            .lazy.compactMap { NSImage(contentsOf: spriteDir.appendingPathComponent($0 + ".png")) }.first
-        let i = png ?? drawn(name, hue: hue, kind: kind, coat: coat)
+        let i = drawn(name, hue: hue, kind: kind, coat: coat)
         cache[name] = i
         return i
     }

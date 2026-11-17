@@ -8,7 +8,7 @@ import AppKit
 //   --off                펫을 끈다                  세션 id 는 Claude Code 가 주는 환경변수에서 읽는다)
 //   --color [색]         색을 바꾼다. 색을 안 주면 다른 펫과 덜 겹치는 색을 고르고, default 를 주면 기본 색으로 돌아간다
 //   --name 이름          이름표를 바꾼다
-//   --kind 종류          펫 종류를 바꾼다 (bunny, dog, 또는 sprites/<종류>/ 폴더 이름)
+//   --kind 종류          펫 종류를 바꾼다 (bunny, dog, cat)
 //   --hook <상태>        Claude Code 훅이 부른다. 훅 JSON 을 stdin 으로 받는다
 //                        (end 는 세션 파일을 지우고, resume 은 waiting 일 때만 working 으로 되돌린다)
 //   --gallery <폴더>     문서에 넣을 그림과 GIF 를 뽑는다 (./build.sh gallery 가 부른다)
@@ -18,6 +18,10 @@ let fm = FileManager.default
 let dir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/mochipet")
 let args = CommandLine.arguments
 let env = ProcessInfo.processInfo.environment
+var portraits: [String: NSImage] = [:]              // 잘라 둔 얼굴 그림 (portrait)
+// 아래 둘은 메뉴 막대 판(Bar)이 쓴다. 그림만 뽑을 때(--gallery)와 selftest 가 앱이 뜨기 전에 쓰므로 맨 위에 둔다
+let stateOrder = ["waiting", "working", "done"]     // 급한 것부터. 나머지(평소)는 맨 아래
+let stateLooks: [String: (name: String, dot: NSColor)] = ["waiting": ("승인을 기다리는 중", .systemOrange), "working": ("진행 중", .systemBlue), "done": ("끝남", .systemGreen)]
 
 // 세션 id 를 파일 이름이나 URL 에 쓰기 전에 걸러낸다.
 func safe(_ id: String) -> Bool {
@@ -48,7 +52,7 @@ let colorNames = Dictionary(uniqueKeysWithValues: colors.flatMap { [($0.en, $0.d
 
 // 색을 정하지 않았을 때 그 종류가 입는 무늬. 색 줄이 비어 있으면 이 무늬다
 let defaultCoat = ["bunny": "white", "dog": "golden", "cat": "siamese"]
-// 무작위로 뽑을 때 컬러 줄을 먼저 볼지. 메뉴바 아이콘의 "랜덤" 에서 고른다. 펫 앱과 /pet 명령이 같은 설정을 읽는다
+// 무작위로 뽑을 때 컬러 줄을 먼저 볼지. 메뉴 막대 아이콘의 "랜덤" 에서 고른다. 펫 앱과 /pet 명령이 같은 설정을 읽는다
 var colorFirst: Bool { UserDefaults.standard.bool(forKey: "colorFirst") }
 
 // 떠 있는 펫들이 입고 있는 색. 색 줄이 비어 있으면(기본 색) 그 종류의 기본 무늬 이름으로, 옛 이름은 지금 이름으로 바꿔서 돌려준다.
@@ -87,7 +91,7 @@ func lookName(_ line: String, kind: String) -> String {
     line.isEmpty ? defaultCoat[kind.isEmpty ? defaultKind : kind] ?? "" : coatAlias[line] ?? line
 }
 
-// 세션들의 색을 모두 다시 뽑는다 (메뉴바 아이콘의 "모두 색 섞기"). 종류는 그대로 두고, 앞에서 뽑은 색과 겹치지 않게 차례로 뽑는다
+// 세션들의 색을 모두 다시 뽑는다 (메뉴 막대 아이콘의 "모두 색 섞기"). 종류는 그대로 두고, 앞에서 뽑은 색과 겹치지 않게 차례로 뽑는다
 func reshuffled(_ sessions: [[String]], colorFirst: Bool) -> [[String]] {
     var used: [String] = []
     return sessions.map { l in
@@ -124,6 +128,9 @@ if args.contains("--selftest") {
     precondition(host(["CLAUDE_CODE_HOST_SESSION_ID": "local_a", "__CFBundleIdentifier": "com.apple.Terminal"]) == "local_a"
                  && host(["__CFBundleIdentifier": "com.googlecode.iterm2"]) == "com.googlecode.iterm2"
                  && host(["__CFBundleIdentifier": "a b.c"]) == "" && host([:]) == "", "세션을 켠 곳을 잘못 적음")
+    let t0 = Date(timeIntervalSince1970: 0), rs = ["idle", "done", "waiting", "working"].map { Row(id: $0, name: "a", state: $0, since: t0, kind: "", look: "", host: "") }
+    precondition(ago(t0, now: t0 + 45) == "45초" && ago(t0, now: t0 + 125) == "2분" && ago(t0, now: t0 + 7300) == "2시간" && ago(t0, now: t0 - 5) == "0초"
+                 && sorted(rs).map(\.state) == ["waiting", "working", "done", "idle"], "메뉴 막대 판의 지난 시간이나 줄 순서가 틀림")
     precondition(hueLine("default", except: dir) == "" && hueLine("분홍", except: dir) == String(350.0 / 360) && hueLine("-90", except: dir) == "0.75"
                  && hueLine("nope", except: dir) == nil && hueLine(nil, except: dir) != nil, "색 줄이 틀림")
     var flier = Pet(pos: .zero); grounded = true; flier.start("fly"); let stayed = flier.name; flier.start("climb"); let low = flier.name; grounded = false; flier.start("balloon")
@@ -168,9 +175,8 @@ if let cmd = args.dropFirst().first, ["--on", "--off", "--color", "--name", "--k
         l![3] = line
     }
     if cmd == "--kind" {
-        guard let k = value(after: "--kind"), safe(k),
-              builtinKinds.contains(k) || fm.fileExists(atPath: spriteDir.appendingPathComponent(k).path) else {
-            print("모르는 종류. 쓸 수 있는 것: \(builtinKinds.joined(separator: ", ")), 또는 sprites/<종류>/ 폴더를 만든 이름"); exit(1)
+        guard let k = value(after: "--kind"), builtinKinds.contains(k) else {
+            print("모르는 종류. 쓸 수 있는 것: \(builtinKinds.joined(separator: ", "))"); exit(1)
         }
         l![5] = k
         if Double(l![3]) == nil, coatName(l![3], kind: k) == nil { l![3] = "" }      // 새 종류에 없는 무늬였으면 기본 색으로 돌린다
@@ -274,42 +280,14 @@ final class Sessions: NSObject {
             if pets[id] == nil {
                 let v = makePet()
                 v.onClick = { openChat(l[2]); acknowledge(id) }
-                v.onKind = { k in                                   // 우클릭 메뉴에서 고른 종류를 세션 파일에 적는다
-                    if let f = file(id), var now = readSession(f) {
-                        now[5] = k
-                        if Double(now[3]) == nil, coatName(now[3], kind: k) == nil { now[3] = "" }      // 새 종류에 없는 무늬였으면 기본 색으로 돌린다
-                        writeSession(f, now)
-                    }
-                }
-                let m = v.menu!
-                // 위에서부터: 세션 이름, 모든 펫, 색, 종류(토끼·강아지·고양이), 색 섞기, 이 펫 끄기. 종료는 메뉴바에만 둔다. 여기 있으면 이 펫만 끄려다 앱을 통째로 끄게 된다
-                m.insertItem(withTitle: "", action: nil, keyEquivalent: "", at: 0)   // 어느 세션의 펫인지. 아래에서 채운다
-                m.insertItem(withTitle: "모든 펫", action: nil, keyEquivalent: "", at: 1).submenu = bar.menu(inBar: false)
-                m.insertItem(.separator(), at: 2)
-                let color = NSMenu()                                // 색: 기본, 이름 붙은 색, 색상환 색. 모든 펫 바로 아래에 둔다. 하위 메뉴가 있는 둘을 모으고, 아이콘이 있는 둘(색 섞기, 이 펫 끄기)을 맨 아래에 모은다
-                // 몇몇 종류만 쓰는 색은 이름 옆에 그 종류들을 적는다. 다른 종류에서 고르면 아무 일도 일어나지 않는다
-                let kindNames = ["bunny": "토끼", "dog": "강아지", "cat": "고양이"]
-                let named = coats.map { c in (c.kinds.isEmpty || c.kinds.count == builtinKinds.count ? c.ko : "\(c.ko) (\(c.kinds.map { kindNames[$0] ?? $0 }.joined(separator: ", ")))", c.en) }
-                // 무늬(기본 색과 이름 있는 색)를 위에, 컬러(색상환 색)를 구분선 아래에 놓는다
-                for (title, want) in [("기본", "default")] + named + [("-", "")] + colors.map({ ($0.ko, $0.en) }) {
-                    if title == "-" { color.addItem(.separator()); continue }
-                    let i = color.addItem(withTitle: title, action: #selector(recolor(_:)), keyEquivalent: "")
-                    i.target = self; i.representedObject = [id, want]
-                }
-                m.insertItem(withTitle: "색", action: nil, keyEquivalent: "", at: 2).submenu = color
-                m.addItem(.separator())
-                // 색 섞기는 이 펫의 색을 다시 뽑는다. 메뉴바의 "모두 색 섞기" 와 같은 아이콘을 단다
-                let mix = m.addItem(withTitle: "색 섞기", action: #selector(recolor(_:)), keyEquivalent: "")
-                mix.target = self; mix.representedObject = [id, ""]; mix.image = NSImage(systemSymbolName: "shuffle", accessibilityDescription: nil)
-                let off = m.addItem(withTitle: "이 펫 끄기", action: #selector(dismiss(_:)), keyEquivalent: "")
-                off.target = self; off.representedObject = id; off.image = NSImage(systemSymbolName: "xmark.rectangle", accessibilityDescription: nil)
+                v.onMenu = { [weak v] in if let v = v { card.show(id, at: v) } }
                 pets[id] = v
             }
             guard let v = pets[id] else { continue }
             // 이름표: /pet name 으로 정한 이름, 없으면 Claude 데스크탑의 세션 제목, 그것도 없으면 폴더 이름
             let full = !l[4].isEmpty ? l[4] : titles[id] ?? (l[1] as NSString).lastPathComponent
             let label = full.count > 24 ? full.prefix(23) + "…" : full
-            if v.label != label { v.label = label; v.menu?.item(at: 0)?.title = label }
+            if v.label != label { v.label = label }
             guard shown[id] != l else { continue }
             if shown[id]?[0] != l[0] { v.setMood(l[0]) }
             let hue = Double(l[3]).map { CGFloat($0) }
@@ -318,11 +296,6 @@ final class Sessions: NSObject {
             if v.coat != coat { v.coat = coat }
             let kind = l[5].isEmpty ? defaultKind : l[5]
             if v.kind != kind { v.kind = kind }
-            // 우클릭 메뉴에서 지금 종류와 색에 체크 표시를 단다. 종류 줄은 종류 이름을, 색 줄은 [세션 id, 색] 을 달고 있다
-            for i in v.menu?.items ?? [] {
-                if let k = i.representedObject as? String, builtinKinds.contains(k) { i.state = k == kind ? .on : .off }
-                for c in i.submenu?.items ?? [] { if let pick = c.representedObject as? [String], pick.count == 2 { c.state = picked(pick[1], line: l[3]) ? .on : .off } }
-            }
             shown[id] = l
         }
         for (id, v) in pets where !ids.contains(id) { v.close(); pets[id] = nil; shown[id] = nil; titles[id] = nil; gone[id] = nil }
@@ -360,28 +333,172 @@ final class Sessions: NSObject {
             if me.focused > doneAt || (claudeInFront && lastFocused(files) == u) { acknowledge(id) }
         }
     }
+}
 
-    // 우클릭 메뉴의 "색": 고른 색을 세션 파일에 적는다. 다음 sync 에서 펫에 입혀진다. 빈 글자는 무작위다
-    @objc func recolor(_ i: NSMenuItem) {
-        guard let pick = i.representedObject as? [String], let f = file(pick[0]), var now = readSession(f),
-              let line = coatName(pick[1], kind: now[5]) ?? (coats.contains { $0.en == pick[1] } ? nil : hueLine(pick[1].isEmpty ? nil : pick[1], kind: now[5], except: f)) else { return }
-        now[3] = line; writeSession(f, now)
+// 펫 한 마리를 바꾸는 일들. 우클릭 판(Card)과 메뉴 막대 판(Bar)이 같이 쓴다. 세션 파일에 적으면 다음 sync 에서 펫에 입혀진다
+// 색: 이름(무늬나 컬러)을 주면 그 색으로, 빈 글자를 주면 무작위로 바꾼다
+func recolor(_ id: String, _ want: String) {
+    guard let f = file(id), var now = readSession(f),
+          let line = coatName(want, kind: now[5]) ?? (coats.contains { $0.en == want } ? nil : hueLine(want.isEmpty ? nil : want, kind: now[5], except: f)) else { return }
+    now[3] = line; writeSession(f, now)
+}
+func setKind(_ id: String, _ k: String) {
+    guard let f = file(id), var now = readSession(f) else { return }
+    now[5] = k
+    if Double(now[3]) == nil, coatName(now[3], kind: k) == nil { now[3] = "" }      // 새 종류에 없는 무늬였으면 기본 색으로 돌린다
+    writeSession(f, now)
+}
+func petOff(_ id: String) { if let f = file(id) { try? fm.removeItem(at: f) } }
+
+// 펫 그림에서 빈 둘레를 잘라 낸 얼굴 그림. 목록과 색 고르는 칸에서 칸 가운데에 꽉 차게 보이게 한다
+func portrait(kind: String, coat: String, hue: CGFloat?) -> NSImage {
+    let key = "\(kind)|\(coat)|\(hue ?? -1)"
+    if let p = portraits[key] { return p }
+    let img = drawn("idle_0", hue: hue, kind: kind, coat: coat)
+    guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return img }
+    let rep = NSBitmapImageRep(cgImage: cg)
+    var x0 = rep.pixelsWide, x1 = -1, y0 = rep.pixelsHigh, y1 = -1
+    for y in 0..<rep.pixelsHigh {
+        for x in 0..<rep.pixelsWide where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 { x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y) }
     }
+    guard x1 >= x0, let cut = cg.cropping(to: CGRect(x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1)) else { return img }
+    let p = NSImage(cgImage: cut, size: NSSize(width: cut.width, height: cut.height))
+    portraits[key] = p
+    return p
+}
 
-    @objc func dismiss(_ i: NSMenuItem) {
-        if let id = i.representedObject as? String, let f = file(id) { try? fm.removeItem(at: f) }
+// 앱 아이콘: 분홍 둥근 네모 안에서 아이보리 토끼가 아래에서 빼꼼 내다본다. 메뉴 막대 판의 머리말과 README 에 쓴다
+func appIcon(_ side: CGFloat) -> NSImage {
+    NSImage(size: NSSize(width: side, height: side), flipped: false) { box in
+        NSBezierPath(roundedRect: box, xRadius: side * 0.23, yRadius: side * 0.23).addClip()
+        NSColor(srgbRed: 1, green: 0.71, blue: 0.77, alpha: 1).setFill(); box.fill()
+        NSGraphicsContext.current?.imageInterpolation = .none
+        drawn("idle_0", kind: "bunny", coat: "ivory").draw(in: NSRect(x: -0.16 * side, y: -0.254 * side, width: 1.32 * side, height: 1.32 * side))
+        return true
     }
 }
 
-// 메뉴바 아이콘. 모든 펫의 투명도·크기·속도를 바꾸고 한꺼번에 숨긴다.
+// 펫 우클릭 판: 머리말(얼굴, 이름, 상태), 종류, 무늬, 컬러, 색 섞기, 이 펫 끄기. 메뉴 막대 판과 같은 모양으로 그린다
+final class Card: NSObject {
+    let pop = NSPopover()
+    var id = ""
+    weak var anchor: NSView?
+
+    // 판을 그 펫의 지금 상태로 만든다. 무늬는 그 종류가 쓰는 것만 그 종류의 얼굴로 보여 준다
+    func view(for r: Row) -> NSView {
+        let root = NSStackView(); root.orientation = .vertical; root.alignment = .leading; root.spacing = 8
+        root.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 14, right: 14)
+        root.translatesAutoresizingMaskIntoConstraints = false
+        root.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        func add(_ v: NSView) { root.addArrangedSubview(v); v.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -28).isActive = true }
+        func rule() { let b = NSBox(); b.boxType = .separator; add(b) }
+        func face(_ pt: CGFloat, coat: String, hue: CGFloat?) -> NSImageView {
+            let v = NSImageView(image: portrait(kind: r.kind, coat: coat, hue: hue))
+            NSLayoutConstraint.activate([v.widthAnchor.constraint(equalToConstant: pt), v.heightAnchor.constraint(equalToConstant: pt)])
+            return v
+        }
+
+        let state = bar.text((stateLooks[r.state]?.name ?? "평소") + " · " + ago(r.since), 12, gray: true)
+        let names = NSStackView(views: [bar.text(r.name, 14, .bold), state]); names.orientation = .vertical; names.alignment = .leading; names.spacing = 1
+        let head = NSStackView(views: [face(40, coat: r.coat, hue: r.hue), names]); head.spacing = 10
+        add(head); rule()
+
+        let kinds = NSSegmentedControl(labels: ["토끼", "강아지", "고양이"], trackingMode: .selectOne, target: self, action: #selector(pickKind(_:)))
+        kinds.selectedSegment = builtinKinds.firstIndex(of: r.kind) ?? 0
+        add(bar.line(bar.text("종류"), kinds))
+
+        // 한 줄에 일곱 칸. 칸마다 얼굴과 이름을 두고, 지금 색인 칸에 테두리를 두른다
+        func grid(_ title: String, _ items: [(name: String, want: String, coat: String, hue: CGFloat?)]) {
+            add(bar.text(title, 11.5, gray: true))
+            for start in stride(from: 0, to: items.count, by: 7) {
+                let cells: [NSView] = (start..<start + 7).map { i in
+                    guard i < items.count else { return NSView() }
+                    let it = items[i], on = picked(it.want, line: r.look) || it.want == lookName(r.look, kind: r.kind)
+                    let name = bar.text(it.name, 9.5, gray: true); name.alignment = .center
+                    if on { name.textColor = .controlAccentColor }
+                    let col = NSStackView(views: [face(34, coat: it.coat, hue: it.hue), name]); col.orientation = .vertical; col.spacing = 4
+                    let cell = RowView(); cell.wantsLayer = true; cell.layer?.cornerRadius = 8
+                    if on { cell.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.13).cgColor; cell.layer?.borderColor = NSColor.controlAccentColor.cgColor; cell.layer?.borderWidth = 1.5 }
+                    cell.addSubview(col); col.translatesAutoresizingMaskIntoConstraints = false
+                    NSLayoutConstraint.activate([col.centerXAnchor.constraint(equalTo: cell.centerXAnchor), col.topAnchor.constraint(equalTo: cell.topAnchor, constant: 4),
+                                                 col.bottomAnchor.constraint(equalTo: cell.bottomAnchor, constant: -5)])
+                    cell.onClick = { [weak self] in recolor(r.id, it.want); self?.reload(soon: true) }
+                    return cell
+                }
+                let row = NSStackView(views: cells); row.distribution = .fillEqually; row.spacing = 2
+                add(row)
+            }
+        }
+        grid("무늬", coats.filter { wears(r.kind, $0) }.map { ($0.ko, $0.en, $0.en, nil) })
+        grid("컬러", colors.map { ($0.ko, $0.en, "", CGFloat($0.degrees / 360)) })
+        rule()
+
+        let mix = NSButton(title: "색 섞기", image: bar.symbol("shuffle"), target: self, action: #selector(shuffle))
+        let off = NSButton(title: "이 펫 끄기", image: bar.symbol("power"), target: self, action: #selector(dismiss))
+        for b in [mix, off] { b.imagePosition = .imageLeading; b.bezelStyle = .rounded }
+        let buttons = NSStackView(views: [mix, off]); buttons.distribution = .fillEqually; buttons.spacing = 8
+        add(buttons)
+        // 메뉴 막대가 꽉 찬 화면에서는 발바닥 아이콘이 노치 뒤로 밀려 안 보이므로, 모든 펫의 설정을 여기서도 열 수 있게 한다
+        let all = NSButton(title: "모든 펫 설정…", target: self, action: #selector(openAll)); all.isBordered = false; all.contentTintColor = .secondaryLabelColor
+        all.font = .systemFont(ofSize: 12)
+        add(all)
+        return root
+    }
+
+    func show(_ id: String, at v: NSView) {
+        self.id = id; anchor = v
+        guard let r = bar.rows().first(where: { $0.id == id }) else { return }
+        let vc = NSViewController(); vc.view = view(for: r)
+        pop.contentViewController = vc; pop.behavior = .transient; pop.contentSize = vc.view.fittingSize
+        pop.show(relativeTo: v.bounds, of: v, preferredEdge: .maxX)
+        NSApp.activate(ignoringOtherApps: true)              // 판 밖을 누르면 닫히게 한다
+    }
+    // 바꾼 것이 세션 파일에서 펫으로 넘어온 뒤(다음 sync)에 판을 다시 그린다
+    func reload(soon: Bool) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (soon ? 0.6 : 0)) { [weak self] in
+            guard let self = self, self.pop.isShown, let r = bar.rows().first(where: { $0.id == self.id }) else { return }
+            let v = self.view(for: r); self.pop.contentViewController?.view = v; self.pop.contentSize = v.fittingSize
+        }
+    }
+    @objc func pickKind(_ c: NSSegmentedControl) { setKind(id, builtinKinds[c.selectedSegment]); reload(soon: true) }
+    @objc func shuffle() { recolor(id, ""); reload(soon: true) }
+    @objc func dismiss() { petOff(id); pop.close() }
+    @objc func openAll() { pop.close(); if let v = anchor { bar.open(from: v, edge: .maxX) } }
+}
+
+// 메뉴 막대 아이콘. 누르면 판이 열린다: 세션 목록, 모으기·색 섞기, 날지 않기·모두 숨기기·랜덤, 투명도·크기.
 // 투명도, 크기, 날지 않기는 UserDefaults 에 남기고, 숨김은 남기지 않는다. 펫이 하나도 없으면 앱이 끝나므로 아이콘도 사라진다.
-// 메뉴바가 꽉 찬 화면에서는 아이콘이 노치 뒤로 밀려 안 보이므로, 같은 설정을 펫 우클릭 메뉴의 "모든 펫" 에도 둔다.
-let speeds = [0.25, 0.15, 0.08]      // 속도 세 단계의 틱 간격(초): 느리게, 보통, 빠르게
+// 메뉴 막대가 꽉 찬 화면에서는 아이콘이 노치 뒤로 밀려 안 보이므로, 펫 우클릭 판의 "모든 펫 설정" 에서도 이 판을 연다.
+// 판의 세션 한 줄. since 는 지금 상태가 된 시각이고, host 는 눌렀을 때 열 곳이다 (세션 파일 셋째 줄)
+struct Row { var id, name, state: String, since: Date, kind, look: String, host: String    // look 은 세션 파일의 색 줄 (무늬 이름이나 색상환 위치)
+    var coat: String { Double(look) == nil ? look : "" }
+    var hue: CGFloat? { Double(look).map { CGFloat($0) } }
+}
+func ago(_ since: Date, now: Date = Date()) -> String {
+    let s = max(Int(now.timeIntervalSince(since)), 0)
+    return s < 60 ? "\(s)초" : s < 3600 ? "\(s / 60)분" : "\(s / 3600)시간"
+}
+func sorted(_ rows: [Row]) -> [Row] {
+    rows.sorted { a, b in
+        let x = stateOrder.firstIndex(of: a.state) ?? stateOrder.count, y = stateOrder.firstIndex(of: b.state) ?? stateOrder.count
+        return x != y ? x < y : a.name < b.name
+    }
+}
+final class RowView: NSView {          // 누르면 그 세션을 여는 줄
+    var onClick: (() -> Void)?
+    override func mouseUp(with e: NSEvent) { onClick?() }
+}
+final class TopDown: NSStackView { override var isFlipped: Bool { true } }   // 스크롤 안에서 위부터 쌓이게 한다
+
 final class Bar: NSObject {
-    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    // ponytail: 꺼진 펫의 슬라이더가 이 배열에 남는다. 펫이 없으면 앱이 끝나므로 쌓여도 몇 개다.
-    var sliders: [(view: NSSlider, now: () -> Double)] = []   // 슬라이더와, 지금 값을 묻는 함수
-    var checks: [(item: NSMenuItem, on: () -> Bool)] = []     // 체크 표시를 다는 항목과, 지금 그 값인지 묻는 함수
+    lazy var item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    var sliders: [(view: NSSlider, now: () -> Double, text: NSTextField, say: () -> String)] = []   // 슬라이더, 지금 값, 값을 적는 글자
+    let pop = NSPopover()
+    let list = TopDown(), scroll = NSScrollView(), subtitle = NSTextField(labelWithString: "")
+    let ground = NSSwitch(), hide = NSSwitch(), random = NSSegmentedControl(labels: ["무늬", "컬러"], trackingMode: .selectOne, target: nil, action: nil)
+    var times: [(since: Date, text: NSTextField)] = []      // 줄마다의 지난 시간. 줄을 다시 만들지 않고 글자만 고친다
+    var listed = "", listHeight: NSLayoutConstraint?
+    let rowHeight: CGFloat = 40, maxRows = 5                // 다섯 줄까지 보이고 그 뒤로는 목록 안에서 스크롤한다
 
     override init() {
         super.init()
@@ -389,58 +506,144 @@ final class Bar: NSObject {
         scale = min(max(saved.object(forKey: "scale") as? Double ?? 1, 0.5), 1.5)
         opacity = min(max(saved.object(forKey: "opacity") as? Double ?? 1, 0.3), 1)
         grounded = saved.bool(forKey: "grounded")
+    }
+
+    // 메뉴 막대에 아이콘을 단다. 그림만 뽑을 때(gallery)는 부르지 않는다
+    func install() {
         item.button?.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "MochiPet")
         if item.button?.image == nil { item.button?.title = "pet" }
-        item.menu = menu(inBar: true)
+        item.button?.imagePosition = .imageLeading
+        item.button?.target = self; item.button?.action = #selector(toggle)
+        let vc = NSViewController(); vc.view = panel
+        pop.contentViewController = vc; pop.behavior = .transient
+        Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(poll), userInfo: nil, repeats: true)
     }
 
-    // 설정 메뉴 하나를 만든다. 메뉴바 아이콘과 펫마다의 우클릭 메뉴가 하나씩 갖는다.
-    // 숨기기는 메뉴바에만 둔다. 우클릭으로 숨기면 아이콘이 안 보이는 화면에서 되돌릴 길이 없다.
-    // 메뉴바 쪽 항목을 바꾸면 README 에 넣는 그림(gallery.swift 의 menuPicture)도 같이 고친다.
-    func menu(inBar: Bool) -> NSMenu {
-        let m = NSMenu()
-        // steps 를 주면 그 수만큼의 눈금에만 멈춘다
-        func slider(_ title: String, _ range: ClosedRange<Double>, _ action: Selector, steps: Int = 0, now: @escaping () -> Double) {
-            m.addItem(withTitle: title, action: nil, keyEquivalent: "")   // 동작이 없는 항목은 흐리게 나와서 제목 구실을 한다
+    func symbol(_ name: String) -> NSImage { NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? NSImage() }
+    func text(_ s: String, _ pt: CGFloat = 13, _ weight: NSFont.Weight = .regular, gray: Bool = false) -> NSTextField {
+        let t = NSTextField(labelWithString: s)
+        t.font = .systemFont(ofSize: pt, weight: weight); t.textColor = gray ? .secondaryLabelColor : .labelColor; t.lineBreakMode = .byTruncatingTail
+        return t
+    }
+    // 왼쪽 것은 왼쪽 끝에, 오른쪽 것들은 오른쪽 끝에 붙인 한 줄
+    func line(_ left: NSView, _ right: NSView...) -> NSStackView {
+        let gap = NSView(); gap.setContentHuggingPriority(.init(1), for: .horizontal)
+        left.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let h = NSStackView(views: [left, gap] + right); h.spacing = 8
+        return h
+    }
+
+    // 판을 한 번 만든다. 세션 목록은 fill 이 채운다. 항목을 바꾸면 README 의 메뉴 그림도 다시 뽑는다 (./build.sh gallery)
+    lazy var panel: NSView = {
+        let root = NSStackView(); root.orientation = .vertical; root.alignment = .leading; root.spacing = 8
+        root.edgeInsets = NSEdgeInsets(top: 12, left: 14, bottom: 14, right: 14)
+        root.translatesAutoresizingMaskIntoConstraints = false
+        root.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        func add(_ v: NSView) { root.addArrangedSubview(v); v.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -28).isActive = true }
+        func rule() { let b = NSBox(); b.boxType = .separator; add(b) }
+
+        let badge = NSImageView(image: appIcon(34))
+        let names = NSStackView(views: [text("MochiPet", 15, .bold), subtitle]); names.orientation = .vertical; names.alignment = .leading; names.spacing = 1
+        subtitle.font = .systemFont(ofSize: 12); subtitle.textColor = .secondaryLabelColor
+        let quit = NSButton(title: "종료", image: symbol("power"), target: NSApp, action: #selector(NSApplication.terminate(_:)))
+        quit.isBordered = false; quit.imagePosition = .imageLeading
+        let head = NSStackView(views: [badge, names]); head.spacing = 10
+        add(line(head, quit)); rule()
+
+        list.orientation = .vertical; list.alignment = .leading; list.spacing = 0; list.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = list; scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        list.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
+        listHeight = scroll.heightAnchor.constraint(equalToConstant: rowHeight); listHeight?.isActive = true
+        add(scroll); rule()
+
+        let gatherAll = NSButton(title: "모으기", image: symbol("display"), target: self, action: #selector(gather))
+        let mix = NSButton(title: "색 섞기", image: symbol("shuffle"), target: self, action: #selector(shuffleAll))
+        for b in [gatherAll, mix] { b.imagePosition = .imageLeading; b.bezelStyle = .rounded }
+        let buttons = NSStackView(views: [gatherAll, mix]); buttons.distribution = .fillEqually; buttons.spacing = 8
+        add(buttons)
+        ground.target = self; ground.action = #selector(toggleGrounded); hide.target = self; hide.action = #selector(toggleHidden)
+        random.target = self; random.action = #selector(setRandom(_:))
+        for c in [ground, hide] as [NSControl] { c.controlSize = .small }
+        add(line(text("날지 않기"), ground)); add(line(text("모두 숨기기"), hide)); add(line(text("랜덤"), random)); rule()
+
+        // 투명도와 크기. steps 를 주면 그 수만큼의 눈금에만 멈춘다
+        func bar(_ title: String, _ range: ClosedRange<Double>, _ action: Selector, steps: Int = 0, now: @escaping () -> Double, say: @escaping () -> String) {
             let s = NSSlider(value: now(), minValue: range.lowerBound, maxValue: range.upperBound, target: self, action: action)
             if steps > 0 { s.numberOfTickMarks = steps; s.allowsTickMarkValuesOnly = true }
-            s.frame = NSRect(x: 18, y: 2, width: 164, height: 22)
-            let box = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 26)); box.addSubview(s)
-            let row = NSMenuItem(); row.view = box; m.addItem(row); sliders.append((s, now))
+            let value = text("", 11.5, gray: true)
+            sliders.append((s, now, value, say)); add(line(text(title, 11.5, gray: true), value)); add(s)
         }
-        slider("투명도", 0.3...1, #selector(setOpacity(_:))) { Double(opacity) }
-        slider("크기", 0.5...1.5, #selector(setSize(_:)), steps: Int((1 / sizeUnit).rounded()) + 1) { Double(scale) }   // 60 ~ 180pt. 레티나에서는 15pt 씩 아홉 단계
-        func choice(_ title: String, _ action: Selector, _ value: Double, on: @escaping () -> Bool) {
-            let i = m.addItem(withTitle: title, action: action, keyEquivalent: "")
-            i.target = self; i.representedObject = value; checks.append((i, on))
+        bar("투명도", 0.3...1, #selector(setOpacity(_:)), now: { Double(opacity) }, say: { "\(Int((opacity * 100).rounded()))%" })
+        bar("크기", 0.5...1.5, #selector(setSize(_:)), steps: Int((1 / sizeUnit).rounded()) + 1, now: { Double(scale) }, say: { "\(Int(side))pt" })   // 60 ~ 180pt. 레티나에서는 15pt 씩 아홉 단계
+        return root
+    }()
+
+    // 떠 있는 펫을 판에 올릴 줄로 바꾼다. 지난 시간은 세션 파일이 마지막으로 바뀐 시각부터 센다
+    // ponytail: 색이나 이름을 바꿔도 파일이 바뀌어서 시간이 0 으로 돌아간다. 거슬리면 상태가 바뀐 시각을 파일에 따로 적는다
+    func rows() -> [Row] {
+        sessions.shown.map { id, l in
+            Row(id: id, name: sessions.pets[id]?.label ?? "", state: l[0], since: file(id).map(modified) ?? Date(),
+                kind: l[5].isEmpty ? defaultKind : l[5], look: l[3], host: l[2])
         }
-        slider("속도", 0...2, #selector(setSpeed(_:)), steps: 3) { Double(speeds.firstIndex(of: tick) ?? 1) }   // 세 단계(느리게, 보통, 빠르게)에만 멈춘다
-        if inBar {                       // 아래는 메뉴바에만 둔다
-            m.addItem(withTitle: "랜덤", action: nil, keyEquivalent: "")       // 무작위로 색을 뽑을 때 어느 줄을 먼저 볼지 (randomLook)
-            choice("무늬 랜덤", #selector(setRandom(_:)), 0) { !colorFirst }
-            choice("컬러 랜덤", #selector(setRandom(_:)), 1) { colorFirst }
-            // 아래는 누르면 바로 일어나는 동작들이라 아이콘을 붙인다. 날지 않기와 모두 숨기기는 켜도 아이콘이 남고 그 앞에 체크 표시가 붙는다
-            func icon(_ name: String) -> NSImage? { NSImage(systemSymbolName: name, accessibilityDescription: nil) }
-            m.addItem(.separator())
-            let here = m.addItem(withTitle: "이 화면으로 모으기", action: #selector(gather), keyEquivalent: "")
-            here.target = self; here.image = icon("display")
-            choice("날지 않기", #selector(toggleGrounded), 0) { grounded }
-            m.items.last?.image = icon("shoeprints.fill")
-            let mix = m.addItem(withTitle: "모두 색 섞기", action: #selector(shuffleAll), keyEquivalent: "")
-            mix.target = self; mix.image = icon("shuffle")
-            choice("모두 숨기기", #selector(toggleHidden), 0) { hidden }
-            m.items.last?.image = icon("eye.slash")
-            m.addItem(.separator())
-            let quit = m.addItem(withTitle: "종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-            quit.target = NSApp; quit.image = icon("xmark.rectangle")
-        }
-        refresh()
-        return m
     }
 
+    // 세션 목록과 머리말을 채운다. 줄의 내용이 그대로면 지난 시간만 고친다 (스크롤 자리가 유지된다)
+    func fill(_ all: [Row]) {
+        _ = panel                                            // 판을 먼저 만들어 둔다 (목록 높이를 여기서 정한다)
+        let rows = sorted(all), waiting = rows.filter { $0.state == "waiting" }.count
+        subtitle.stringValue = "펫 \(rows.count)마리" + (waiting > 0 ? " · 승인 대기 \(waiting)" : "")
+        let now = rows.map { "\($0.id)|\($0.name)|\($0.state)|\($0.kind)|\($0.coat)|\($0.hue ?? -1)" }.joined(separator: "\n")
+        if now != listed {
+            listed = now; times = []
+            list.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            for r in rows {
+                let dot = NSView(); dot.wantsLayer = true; dot.layer?.cornerRadius = 4
+                dot.layer?.backgroundColor = (stateLooks[r.state]?.dot ?? NSColor.systemGray.withAlphaComponent(0.5)).cgColor
+                let face = NSImageView(image: portrait(kind: r.kind, coat: r.coat, hue: r.hue))
+                let label = NSStackView(views: [text(r.name, 13, .semibold), text(stateLooks[r.state]?.name ?? "평소", 11, gray: true)])
+                label.orientation = .vertical; label.alignment = .leading; label.spacing = 0
+                let time = text(ago(r.since), 12, gray: true); times.append((r.since, time))
+                let off = NSButton(image: symbol("xmark.circle.fill"), target: self, action: #selector(turnOff(_:)))   // 이 펫만 끈다
+                off.isBordered = false; off.contentTintColor = .tertiaryLabelColor; off.identifier = .init(r.id); off.toolTip = "이 펫 끄기"
+                let left = NSStackView(views: [dot, face, label]); left.spacing = 8
+                let row = line(left, time, off), v = RowView()
+                v.onClick = { [weak self] in openChat(r.host); acknowledge(r.id); self?.pop.close() }
+                v.addSubview(row); row.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8),
+                                             face.widthAnchor.constraint(equalToConstant: 36), face.heightAnchor.constraint(equalToConstant: 34),
+                                             v.heightAnchor.constraint(equalToConstant: rowHeight), row.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+                                             row.leadingAnchor.constraint(equalTo: v.leadingAnchor), row.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -2)])
+                list.addArrangedSubview(v); v.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
+            }
+            listHeight?.constant = rowHeight * CGFloat(min(max(rows.count, 1), maxRows))
+        }
+        for t in times { t.text.stringValue = ago(t.since) }
+    }
+
+    @objc func toggle() {
+        if pop.isShown { pop.close() } else if let b = item.button { open(from: b, edge: .minY) }
+    }
+    // 판을 연다. 메뉴 막대 아이콘에서도, 펫 우클릭 판의 "모든 펫 설정" 에서도 연다
+    func open(from v: NSView, edge: NSRectEdge) {
+        fill(rows()); refresh()
+        pop.contentSize = panel.fittingSize
+        pop.show(relativeTo: v.bounds, of: v, preferredEdge: edge)
+        NSApp.activate(ignoringOtherApps: true)              // 판 밖을 누르면 닫히게 한다
+    }
+
+    // 1초마다: 승인을 기다리는 펫 수를 아이콘 옆에 주황색으로 적고, 판이 열려 있으면 목록을 고친다
+    @objc func poll() {
+        let waiting = sessions.shown.values.filter { $0[0] == "waiting" }.count
+        item.button?.attributedTitle = NSAttributedString(string: waiting > 0 ? " \(waiting)" : "",
+            attributes: [.foregroundColor: NSColor.systemOrange, .font: NSFont.boldSystemFont(ofSize: 12)])
+        if pop.isShown { fill(rows()); pop.contentSize = panel.fittingSize }
+    }
+
+    @objc func turnOff(_ b: NSButton) { if let id = b.identifier?.rawValue { petOff(id) } }
+
     func refresh() {
-        for s in sliders { s.view.doubleValue = s.now() }    // 다른 메뉴의 슬라이더도 같은 값으로 맞춘다
-        for c in checks { c.item.state = c.on() ? .on : .off }
+        for s in sliders { s.view.doubleValue = s.now(); s.text.stringValue = s.say() }
+        ground.state = grounded ? .on : .off; hide.state = hidden ? .on : .off; random.selectedSegment = colorFirst ? 1 : 0
         item.button?.appearsDisabled = hidden                // 숨긴 동안은 아이콘이 흐리다
         allPets.forEach { $0.applyLook() }
     }
@@ -455,11 +658,8 @@ final class Bar: NSObject {
         scale = (s.doubleValue / unit).rounded() * unit
         UserDefaults.standard.set(Double(scale), forKey: "scale"); refresh()
     }
-    @objc func setSpeed(_ s: NSSlider) {
-        tick = speeds[min(max(Int(s.doubleValue.rounded()), 0), speeds.count - 1)]; refresh()
-    }
-    @objc func setRandom(_ i: NSMenuItem) {
-        if let v = i.representedObject as? Double { UserDefaults.standard.set(v == 1, forKey: "colorFirst"); refresh() }
+    @objc func setRandom(_ c: NSSegmentedControl) {     // 무작위로 색을 뽑을 때 어느 줄을 먼저 볼지 (randomLook)
+        UserDefaults.standard.set(c.selectedSegment == 1, forKey: "colorFirst"); refresh()
     }
     // 모두 색 섞기: 떠 있는 펫 전부의 색을 다시 뽑아 세션 파일에 적는다. 펫은 다음 sync 에서 새 색으로 바뀐다
     // 이 화면으로 모으기: 마우스가 있는 화면(메뉴를 연 화면)의 꼭대기로 모든 펫을 옮긴다. 거기서 떨어져 내려온다
@@ -490,6 +690,8 @@ final class Bar: NSObject {
 let app = NSApplication.shared
 let bar = Bar()                     // 펫을 만들기 전에 크기와 투명도를 읽어 둔다
 let sessions = Sessions()
+let card = Card()
+bar.install()
 sessions.sync()
 Timer.scheduledTimer(timeInterval: 0.5, target: sessions, selector: #selector(Sessions.sync), userInfo: nil, repeats: true)
 Timer.scheduledTimer(timeInterval: 2, target: sessions, selector: #selector(Sessions.watchDesktop), userInfo: nil, repeats: true)

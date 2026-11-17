@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 //   <dir>/<종류>.png                           종류마다 모든 프레임을 모은 한 장. 프레임 이름을 그 그림 바로 아래에 적는다
 //   <dir>/hero.gif                             여러 상태의 펫을 한 줄로 세운 움직이는 그림
 //   <dir>/working.gif, waiting.gif, done.gif   세션 상태별 동작
-//   <dir>/menu.png                             메뉴바 아이콘과 거기서 열리는 메뉴
+//   <dir>/idle.gif                             할 일이 없을 때 혼자 노는 동작 몇 가지
+//   <dir>/menu.png                             메뉴 막대 아이콘과 거기서 열리는 메뉴
 //   <dir>/colors.png                           색마다 종류별로 한 마리씩 세운 한 장. 몸 색과 품종 색 두 묶음이다
 
 // scale 은 1pt 를 몇 픽셀로 찍을지다. 마크다운 그림은 픽셀 크기대로 보여서, 작게 보여야 하는 그림은 scale 을 낮춘다
@@ -93,9 +94,18 @@ func exportGallery(to dir: URL) throws {
         (tag as NSString).draw(at: NSPoint(x: r.minX + 8, y: r.minY + 2), withAttributes: attrs)
     }
     try menuPicture().representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("menu.png"))
+    try contextPicture().representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("context.png"))
+    try bitmap(200, 200) { appIcon(200).draw(in: NSRect(x: 0, y: 0, width: 200, height: 200)) }.representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("icon.png"))
     try gif("working", 160, 140, ticks: 2) { t in pet("work", kind: "dog", at: 26, tick: t) }
     try gif("waiting", 160, 140, ticks: 4) { t in pet("call", at: 20, tick: t) }
     try gif("done", 160, 140, ticks: 8) { t in pet("cheer", kind: "cat", at: 20, tick: t) }
+    // 할 일이 없을 때 하는 놀이를 하나씩 세운다. 걷기, 달리기, 오르기, 떨어지기 같은 이동 동작은 뺀다
+    let play = ["sleep", "munch", "fish", "ball", "flower", "box", "bubble", "balloon", "rope", "dance"]
+    let looks: [(String, String)] = [("bunny", ""), ("dog", ""), ("cat", ""), ("bunny", "ivory"), ("dog", "shiba"), ("cat", "golden"), ("bunny", "cream"), ("dog", "pug"), ("cat", "gray"), ("bunny", "patch")]
+    let perRow = 5                    // 상태 그림과 같은 크기로 보이게 다섯 마리씩 두 줄로 세운다
+    try gif("idle", 30 + CGFloat(perRow) * 110, 280, ticks: 24) { t in
+        for (i, a) in play.enumerated() { pet(a, kind: looks[i].0, coat: looks[i].1, at: 10 + CGFloat(i % perRow) * 110, y: i < perRow ? 150 : 10, tick: t) }
+    }
     // 가운데에 창 하나를 세우고, 그 윗변에 올라앉은 펫, 윗변에 뒷모습으로 매달린 펫, 창 앞에서 풍선을 들고 뜬 펫을 같이 보여 준다
     let win = NSRect(x: 280, y: 10, width: 250, height: 150)
     try gif("hero", 670, 285, ticks: 8) { t in
@@ -114,56 +124,55 @@ func exportGallery(to dir: URL) throws {
     }
 }
 
-// 메뉴바의 발바닥 아이콘과 거기서 열리는 메뉴를 그린다. 항목과 순서는 main.swift 의 Bar.menu(inBar: true) 와 같게 둔다.
-// 화면을 찍은 그림은 다른 아이콘과 뒤 배경이 같이 찍히고 다시 뽑을 수도 없어서, 다른 그림처럼 코드로 그린다
+// 메뉴 막대의 발바닥 아이콘과 거기서 열리는 판을 그린다. 판은 앱이 쓰는 뷰(main.swift 의 Bar.panel)를 그대로 찍는다.
+// 화면을 찍은 그림은 다른 아이콘과 뒤 배경이 같이 찍혀서, 예시 세션 셋을 넣은 판만 따로 찍는다
+// 화면 밖 창에 뷰를 얹어서 밝은 모양으로 찍는다
+private func snapshot(_ v: NSView) -> NSBitmapImageRep {
+    _ = NSApplication.shared
+    let win = NSWindow(contentRect: NSRect(origin: .zero, size: v.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+    win.appearance = NSAppearance(named: .aqua); win.contentView = v; v.layoutSubtreeIfNeeded()
+    let shot = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+    v.cacheDisplay(in: v.bounds, to: shot)
+    return shot
+}
+// 찍어 둔 판을 그림자 깔린 둥근 판 위에 그린다
+private func panel(_ shot: NSBitmapImageRep, in r: NSRect) {
+    let shape = NSBezierPath(roundedRect: r, xRadius: 12, yRadius: 12)
+    NSGraphicsContext.saveGraphicsState()
+    let shadow = NSShadow(); shadow.shadowColor = NSColor(white: 0, alpha: 0.28); shadow.shadowBlurRadius = 12; shadow.shadowOffset = NSSize(width: 0, height: -3); shadow.set()
+    NSColor(white: 0.965, alpha: 1).setFill(); shape.fill()
+    NSGraphicsContext.restoreGraphicsState()
+    NSGraphicsContext.saveGraphicsState(); shape.addClip(); shot.draw(in: r); NSGraphicsContext.restoreGraphicsState()
+}
+
+// 펫을 우클릭했을 때 뜨는 판. 승인을 기다리는 시바 옆에 그 펫의 판을 그린다 (main.swift 의 Card.view)
+private func contextPicture() -> NSBitmapImageRep {
+    let shot = snapshot(Card().view(for: Row(id: "a", name: "mochipet", state: "waiting", since: Date() - 182, kind: "dog", look: "shiba", host: "")))
+    let w = shot.size.width + 150, h = shot.size.height + 60
+    return bitmap(w, h) {
+        NSColor(srgbRed: 0.80, green: 0.90, blue: 0.97, alpha: 1).setFill(); NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: w, height: h), xRadius: 12, yRadius: 12).fill()
+        drawn("call_0", kind: "dog", coat: "shiba").draw(in: NSRect(x: 8, y: h - size - 14, width: size, height: size))
+        panel(shot, in: NSRect(x: 126, y: 24, width: shot.size.width, height: shot.size.height))
+    }
+}
+
 private func menuPicture() -> NSBitmapImageRep {
-    let w: CGFloat = 236, h: CGFloat = 410
-    return bitmap(w, h, scale: 1.25) {
-        func text(_ s: String, _ x: CGFloat, _ y: CGFloat, gray: Bool = false) {
-            (s as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor(white: gray ? 0.66 : 0.13, alpha: 1)])
-        }
-        func symbol(_ name: String, _ x: CGFloat, _ y: CGFloat, _ pt: CGFloat) {      // x, y 는 가운데
-            guard let i = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: pt, weight: .medium)) else { return }
-            i.draw(in: NSRect(x: x - i.size.width / 2, y: y - i.size.height / 2, width: i.size.width, height: i.size.height))
-        }
-        func pill(_ r: NSRect, _ c: NSColor) { c.setFill(); NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2).fill() }
-
-        // 메뉴바 한 토막과, 눌려서 밝아진 발바닥 아이콘
+    let b = Bar(), t = Date()
+    scale = 1; opacity = 1; grounded = false; hidden = false     // 저장해 둔 설정과 상관없이 같은 그림이 나오게 한다
+    b.fill([Row(id: "a", name: "결제 버그 수정", state: "waiting", since: t - 182, kind: "bunny", look: "", host: ""),
+            Row(id: "b", name: "mochipet", state: "working", since: t - 41, kind: "dog", look: "", host: ""),
+            Row(id: "c", name: "문서 정리", state: "done", since: t - 720, kind: "cat", look: "", host: "")])
+    let v = b.panel
+    b.refresh(); b.random.selectedSegment = 0
+    let shot = snapshot(v)
+    let w = v.bounds.width + 24, h = v.bounds.height + 58
+    return bitmap(w, h) {
+        // 메뉴 막대 한 토막과, 발바닥 아이콘 옆의 승인 대기 수
         NSColor(white: 0.90, alpha: 1).setFill(); NSBezierPath(roundedRect: NSRect(x: 0, y: h - 30, width: w, height: 30), xRadius: 9, yRadius: 9).fill()
-        NSColor.white.setFill(); NSBezierPath(roundedRect: NSRect(x: 14, y: h - 26, width: 36, height: 22), xRadius: 7, yRadius: 7).fill()
-        symbol("pawprint.fill", 32, h - 15, 13)
-
-        // 메뉴 판: 그림자를 깔고 흰 판을 얹는다
-        let panel = NSRect(x: 12, y: 16, width: 212, height: h - 52), shape = NSBezierPath(roundedRect: panel, xRadius: 12, yRadius: 12)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow(); shadow.shadowColor = NSColor(white: 0, alpha: 0.28); shadow.shadowBlurRadius = 12; shadow.shadowOffset = NSSize(width: 0, height: -4); shadow.set()
-        NSColor.white.setFill(); shape.fill()
-        NSGraphicsContext.restoreGraphicsState()
-        NSColor(white: 0, alpha: 0.10).setStroke(); shape.lineWidth = 0.5; shape.stroke()
-
-        var y = panel.maxY - 8                          // 다음 줄의 윗변
-        func title(_ s: String) { y -= 22; text(s, panel.minX + 16, y + 3, gray: true) }
-        func slider(_ at: CGFloat, ticks: Int = 0) {    // at 은 손잡이 자리(0~1). ticks 는 눈금 수
-            y -= 26
-            let track = NSRect(x: panel.minX + 20, y: y + 11, width: panel.width - 40, height: 4), knob = track.minX + 9 + (track.width - 18) * at
-            for i in 0..<ticks {                            // 눈금은 트랙 아래의 짧은 세로줄
-                NSColor(white: 0.70, alpha: 1).setFill()
-                NSRect(x: track.minX + 9 + (track.width - 18) * CGFloat(i) / CGFloat(ticks - 1) - 0.5, y: y + 3, width: 1, height: 5).fill()
-            }
-            pill(track, NSColor(white: 0.86, alpha: 1)); pill(NSRect(x: track.minX, y: track.minY, width: knob - track.minX, height: 4), NSColor(white: 0.62, alpha: 1))
-            NSGraphicsContext.saveGraphicsState()
-            let s = NSShadow(); s.shadowColor = NSColor(white: 0, alpha: 0.3); s.shadowBlurRadius = 3; s.shadowOffset = NSSize(width: 0, height: -1); s.set()
-            pill(NSRect(x: knob - 11, y: y + 6, width: 22, height: 14), .white)
-            NSGraphicsContext.restoreGraphicsState()
+        if let paw = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) {
+            paw.draw(in: NSRect(x: w / 2 - 14, y: h - 15 - paw.size.height / 2, width: paw.size.width, height: paw.size.height))
         }
-        func item(_ s: String, mark: String? = nil) { y -= 22; if let m = mark { symbol(m, panel.minX + 19, y + 11, 11) }; text(s, panel.minX + 32, y + 3) }
-        func line() { y -= 11; NSColor(white: 0.87, alpha: 1).setFill(); NSRect(x: panel.minX + 12, y: y + 5, width: panel.width - 24, height: 1).fill() }
-
-        title("투명도"); slider(1)
-        title("크기"); slider(0.5, ticks: 9)
-        title("속도"); slider(0.5, ticks: 3)
-        title("랜덤"); item("무늬 랜덤", mark: "checkmark"); item("컬러 랜덤")
-        line(); item("이 화면으로 모으기", mark: "display"); item("날지 않기", mark: "shoeprints.fill"); item("모두 색 섞기", mark: "shuffle"); item("모두 숨기기", mark: "eye.slash")
-        line(); item("종료", mark: "xmark.rectangle")
+        ("1" as NSString).draw(at: NSPoint(x: w / 2 + 6, y: h - 23), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 12), .foregroundColor: NSColor.systemOrange])
+        panel(shot, in: NSRect(x: 12, y: 16, width: v.bounds.width, height: v.bounds.height))
     }
 }
