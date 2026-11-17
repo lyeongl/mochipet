@@ -10,10 +10,17 @@
 A desktop pet for Code sessions in Claude Desktop.  
 Make one with `/pet on`!
 
+## The pet shows the session state
+
+You can tell what Claude is doing from the pet alone, without looking at the session window.
+
 | Working | Waiting for approval | Done |
 |:---:|:---:|:---:|
 | ![Working](gallery/working.gif) | ![Waiting for approval](gallery/waiting.gif) | ![Done](gallery/done.gif) |
-| Sits and hammers | Calls you with a `!` | Jumps in confetti |
+| **Sits and hammers** | **Calls you with a `!`** | **Jumps in confetti** |
+| Starts when you send a prompt<br>and goes on until the turn ends | Keeps calling while a permission request waits.<br>Hammers again once you approve | Jumps when the turn ends. Click the pet or<br>open that session and it goes back to playing |
+
+Otherwise it plays alone: walks, sleeps, eats. Click the pet to open its session in Claude Desktop.
 
 ## Install
 
@@ -62,15 +69,6 @@ Type these in a Claude session.
 | `/pet color default` | Goes back to the default color of that kind |
 | `/pet name new name` | Changes the name tag |
 | `/pet off` | Turns the pet off |
-
-### What the pet does in each session state
-
-| Session state | Pet |
-|---|---|
-| Working | Sits and hammers |
-| Waiting for permission | Calls you with a `!` |
-| Turn finished | Jumps in confetti |
-| Otherwise | Plays alone: walks, sleeps, eats |
 
 ### Menu bar icon
 
