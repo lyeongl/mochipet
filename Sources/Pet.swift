@@ -5,7 +5,7 @@ import AppKit
 // 바라보는 방향(flip)은 상태로 들고 다닌다. 다른 창 위에 올라서는 것은 원본에 없는 기능이다.
 
 struct Action {
-    var frames: [String]            // 스프라이트 이름. sprites/<이름>.png 가 있으면 그 파일을 쓴다
+    var frames: [String]            // 프레임 이름 (looks 의 자세 이름)
     var v: CGFloat = 0              // 틱당 전진량. 바라보는 쪽으로 움직인다
     var dy: CGFloat = 0             // 틱당 상승량 (AppKit 좌표라 위쪽이 +)
     var accel: CGFloat = 0          // 틱마다 dy 에 더 쌓이는 양. 음수면 중력처럼 점점 빨리 떨어진다
@@ -109,7 +109,7 @@ let actions: [String: Action] = [
 
 let leaping: Set = ["crouch", "leap", "perch", "hopoff"]   // 머리를 밟고 넘어가는 동작들
 let flying: Set = ["fly", "float", "balloon", "climb"]     // 바닥을 떠나는 동작들: 날기, 창 위에서 날아 내려오기, 풍선 타기, 창 타고 오르기
-var grounded = false                                        // 켜면 바닥에만 있는다: flying 동작을 고르지 않고, 창 윗변을 발판으로 치지 않는다. 메뉴바 아이콘의 "날지 않기" 에서 고른다
+var grounded = false                                        // 켜면 바닥에만 있는다: flying 동작을 고르지 않고, 창 윗변을 발판으로 치지 않는다. 메뉴 막대 아이콘의 "날지 않기" 에서 고른다
 
 struct Pet {
     var pos: CGPoint
@@ -255,19 +255,20 @@ extension Pet {
 let size: CGFloat = 120              // 그림을 그리는 칸의 한 변. 화면에 띄우는 크기는 side 다
 
 // 화면에 띄우는 모습. 그림은 늘 size 칸에 그리고, 창을 side 크기로 띄워서 줄이거나 늘린다.
-// MochiPet 의 메뉴바 아이콘이 바꾼다. 바꾼 뒤에는 allPets 마다 applyLook() 을 부른다.
-var scale: CGFloat = 1               // 0.5 ~ 1.5. 메뉴바 슬라이더가 도트 한 칸이 화면 픽셀 정수 개가 되는 값으로 맞춰서 넣는다
+// MochiPet 의 메뉴 막대 아이콘이 바꾼다. 바꾼 뒤에는 allPets 마다 applyLook() 을 부른다.
+var scale: CGFloat = 1               // 0.5 ~ 1.5. 메뉴 막대 슬라이더가 도트 한 칸이 화면 픽셀 정수 개가 되는 값으로 맞춰서 넣는다
 var opacity: CGFloat = 1
 var hidden = false                   // 모든 펫을 숨기고 멈춘다
 var side: CGFloat { (size * scale).rounded() }
 // 떠 있는 펫들. 끈 펫의 창도 한동안 NSApp.windows 에 남아 있어서 host 로 걸러낸다.
-// 안 거르면 크기나 속도를 바꿀 때 끈 펫이 다시 나타나서, 타이머가 죽은 채로 멈춰 서 있게 된다.
+// 안 거르면 크기를 바꿀 때 끈 펫이 다시 나타나서, 타이머가 죽은 채로 멈춰 서 있게 된다.
 var allPets: [PetView] { NSApp.windows.compactMap { $0.contentView as? PetView }.filter { $0.host != nil } }
-var tick: Double {                   // 틱 간격(초). 작을수록 빠르다
-    get { UserDefaults.standard.object(forKey: "tick") as? Double ?? 0.15 }
-    set { UserDefaults.standard.set(newValue, forKey: "tick"); allPets.forEach { $0.restartTimer() } }
-}
-let spriteDir = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("sprites")
+let tick = 0.15                      // 틱 간격(초)
+// 화면에 적는 말의 언어. 맥의 첫째 언어가 한국어면 한국어, 아니면 영어다. 실행할 때 `-lang en` 을 주거나 defaults 의 lang 으로 바꿀 수 있다
+var korean = (UserDefaults.standard.string(forKey: "lang") ?? Locale.preferredLanguages.first ?? "en").hasPrefix("ko")
+func L(_ ko: String, _ en: String) -> String { korean ? ko : en }
+// 앱 아이콘과 README 그림(메인 이미지, 우클릭 그림)의 바탕색. 아주 연한 분홍으로 맞춘다
+let backdrop = NSColor(srgbRed: 1, green: 0.91, blue: 0.93, alpha: 1)
 
 // 프레임별 자세. 펫 종류가 달라도 같은 표를 쓴다. 왼쪽을 보는 모습으로 그린다.
 enum Eyes { case open, closed, wide, happy, dizzy }
@@ -445,7 +446,7 @@ func oklch(_ L: Double, _ C: Double, _ h: Double) -> NSColor {
 //   bunny   도트 토끼 (기본). 같은 도형을 30x30 칸에 계단지게 그린 뒤 키운다
 //   dog     도트 강아지. 토끼와 몸이 같고 귀·꼬리·주둥이만 다르다
 //   cat     도트 고양이. 토끼와 몸이 같고 귀·꼬리·입·수염만 다르다
-// 그 밖의 이름은 sprites/<종류>/ 폴더에 넣은 PNG 로 그려진다. PNG 도 없으면 기본 종류로 그린다.
+// 그 밖의 이름은 기본 종류로 그린다.
 let builtinKinds = ["bunny", "dog", "cat"]
 // 색상환으로 못 고르는 색. 색 줄에 숫자 대신 이름으로 적는다 (paintPet 참고). kinds 가 비어 있으면 모든 종류가 쓴다.
 // 이 색들이 무늬 줄이다. 흰색과 크림은 컬러 줄(색상환 색)에도 들어간다. 나머지는 실제 품종의 털 무늬를 담은 색이다.
@@ -525,7 +526,7 @@ func stroke(_ pts: [NSPoint], _ c: NSColor, _ width: CGFloat) {
 // yellow 는 노랑 근처에서 base 대신 쓰는 값이다. 다른 색과 같은 밝기·채도로는 노랑이 올리브색으로 보여서 더 밝고 진하게 준다.
 // plain 은 색을 정하지 않은 토끼(흰색)의 그늘과 테두리다
 let palette: (base: [(L: Double, C: Double)], yellow: [(L: Double, C: Double)], plain: (shade: NSColor, edge: NSColor)) = (
-    [(0.965, 0.035), (0.92, 0.055), (0.85, 0.08), (0.80, 0.10)], [(0.965, 0.06), (0.92, 0.085), (0.85, 0.115), (0.80, 0.13)],
+    [(0.965, 0.04), (0.93, 0.055), (0.885, 0.07), (0.855, 0.085)], [(0.965, 0.06), (0.93, 0.075), (0.885, 0.09), (0.855, 0.105)],   // 테두리와 귀를 연하게 해서 몸 색과 덜 튀게 한다
     (NSColor(srgbRed: 0.96, green: 0.955, blue: 0.95, alpha: 1), NSColor(srgbRed: 0.86, green: 0.84, blue: 0.82, alpha: 1)))
 
 // 몸 색 한 가지. role 은 0 털, 1 그늘, 2 테두리, 3 강아지 귀다.
@@ -660,6 +661,8 @@ func paintPet(_ k: Look, _ hue: CGFloat?, _ line: NSColor, dog: Bool, cat: Bool 
         let ear = oklch(0.91, 0.068, 56.0 / 360), deep = oklch(0.84, 0.085, 58.0 / 360)
         earFur = [-1: ear, 1: ear]; earEdge = [-1: deep, 1: deep]; dark = deep
     }
+    // 컬러 줄의 색상환 색: 아이보리와 같은 반투명 분홍 볼을 절반 세기로 얹는다. 초록·파랑 몸에서도 얼룩져 보이지 않는 세기다
+    if hue != nil && coat != "cream" { cheeks(drop: 4) { _ in oklch(0.86, 0.10, 20.0 / 360).withAlphaComponent(0.056) } }
     if coat == "ivory" {                     // 아이보리: 따뜻한 흰색 몸에 배만 순백이고 분홍 볼이 있다. 테두리와 귀·꼬리는 몸과 같은 각도에서 어둡게만 하면 올리브빛이 돌아서 따로 준다
         fade(0.955, 0.022, 85, rim: 0.85, deep: dog ? 0.82 : 0.80)
         (edge, dark) = (oklch(0.86, 0.04, 75.0 / 360), oklch(0.82, 0.05, 72.0 / 360)); whisker = oklch(0.74, 0.03, 70.0 / 360)
@@ -788,7 +791,9 @@ func paintPet(_ k: Look, _ hue: CGFloat?, _ line: NSColor, dog: Bool, cat: Bool 
     let earY = (low < 1 || k.perk != 0 ? root - low + 2.4 : root) + k.perk * 4
     // 고양이 귀 두 짝: 세모. 테두리, 털, 분홍 속을 차례로 겹친다. 토끼 귀 각도(ears)의 절반만큼만 벌어진다
     if cat { for side in [-1, 1] as [CGFloat] {
-        let at = NSPoint(x: cx + side * 16 + turn * 0.5, y: k.lift + h - 7), lean = 10 + k.ears * 0.5 + side * k.sway
+        // 귀 자리를 도트 칸(4pt)에 맞춘다. 칸 사이에 걸리면 두 귀가 서로 다른 모양으로 찍힌다 (몸이 옆으로 옮겨 가는 망치질에서 그랬다)
+        let mid = ((cx + turn * 0.5) / 4).rounded() * 4, base = ((k.lift + h - 7 - 3.6) / 4).rounded() * 4 + 3.6   // 3.6 은 평소 자세의 귀 높이가 칸에서 벗어난 만큼이다. 평소 그림은 그대로 둔다
+        let at = NSPoint(x: mid + side * 16, y: base + k.perk * 4), lean = 10 + k.ears * 0.5 + side * k.sway   // perk: 토끼처럼 귀를 칸 단위로 올린다 (망치를 들 때)
         func tri(_ half: CGFloat, _ base: CGFloat, _ tip: CGFloat, _ c: NSColor) {
             let p = NSBezierPath(); p.move(to: NSPoint(x: -half, y: base)); p.line(to: NSPoint(x: half, y: base)); p.line(to: NSPoint(x: side, y: tip)); p.close()
             var t = AffineTransform(translationByX: at.x, byY: at.y); t.rotate(byDegrees: -side * lean); p.transform(using: t)
@@ -972,9 +977,9 @@ func paintToy(_ k: Look, _ cx: CGFloat, _ fur: NSColor, _ edge: NSColor, _ line:
         lump(36, grip, 5, 4, edge, fur)
     case "door", "doorL", "doorM", "doorR":   // 문: 몸을 자르던 것을 되돌린다
         NSGraphicsContext.restoreGraphicsState()
-        // 문틀을 몸 앞에 다시 그린다. 그래서 몸이 문틀 뒤, 문 안쪽 앞에 있어 보인다.
-        // 강아지는 귀가 문보다 넓어서, 문 앞에 서 있을 때는 문틀을 앞에 그리지 않는다 (귀가 문틀에 잘려 보인다)
-        guard !dog || k.toy == "doorL" || k.toy == "doorR" else { break }
+        // 문을 드나드는 동안에만 문틀을 몸 앞에 다시 그린다. 그래서 몸이 문틀 뒤, 문 안쪽 앞에 있어 보인다.
+        // 문 앞에 서 있을 때는 그리지 않는다. 귀나 꼬리가 문보다 넓어서 문틀이 몸 위를 지나가 보인다
+        guard k.toy == "doorL" || k.toy == "doorR" else { break }
         dot(16, 0, 1, 24, doorRim); dot(100, 0, 1, 24, doorRim); dot(20, 92, 1, 1, doorRim); dot(96, 92, 1, 1, doorRim)
         dot(20, 96, 3, 1, doorRim); dot(88, 96, 3, 1, doorRim); dot(28, 100, 16, 1, doorRim)
         dot(12, 0, 24, 1, doorSill)
@@ -1122,7 +1127,11 @@ func paintProps(_ k: Look, _ body: NSRect, _ mouth: NSPoint, _ line: NSColor, do
 }
 
 // 화면에 보이는 창들을 AppKit 좌표로 돌려준다. wins 는 다른 앱의 일반 창(앞에 있는 순서), pets 는 펫 창이다.
+// 창 목록을 묻는 일이 펫 앱이 쓰는 CPU 의 대부분이라(펫 8마리에서 85%), 한 틱 안에서는 한 번만 묻고 모든 펫이 같이 쓴다
+var seenWindows: (at: Double, wins: [CGRect], pets: [(id: Int, rect: CGRect)]) = (0, [], [])
 func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
+    let now = CFAbsoluteTimeGetCurrent()
+    if now - seenWindows.at < tick * 0.9 { return (seenWindows.wins, seenWindows.pets) }
     let primaryH = NSScreen.screens[0].frame.height   // CGWindow 좌표는 위가 0 이라 뒤집는다
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
     var wins: [CGRect] = [], pets: [(id: Int, rect: CGRect)] = []
@@ -1130,13 +1139,14 @@ func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
         guard (w[kCGWindowAlpha as String] as? Double ?? 1) > 0, let b = w[kCGWindowBounds as String] as? NSDictionary,
               let q = CGRect(dictionaryRepresentation: b) else { continue }
         let r = CGRect(x: q.minX, y: primaryH - q.maxY, width: q.width, height: q.height)
-        if w[kCGWindowLayer as String] as? Int == 0 {          // 일반 창. Dock·메뉴바는 빠진다
+        if w[kCGWindowLayer as String] as? Int == 0 {          // 일반 창. Dock·메뉴 막대는 빠진다
             if r.width >= side { wins.append(r) }
         } else if w[kCGWindowOwnerName as String] as? String == "MochiPet", r.width == r.height, r.width >= 60,
-                  let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴바 아이콘과 구별된다
+                  let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴 막대 아이콘과 구별된다
             pets.append((id, r))
         }
     }
+    seenWindows = (now, wins, pets)
     return (wins, pets)
 }
 
@@ -1146,7 +1156,8 @@ final class PetView: NSView {
     var hue: CGFloat? { didSet { cache = [:]; needsDisplay = true } }   // 몸 색. drawn() 참고
     var kind = defaultKind { didSet { cache = [:]; needsDisplay = true } }   // 펫 종류
     var coat = "" { didSet { cache = [:]; needsDisplay = true } }            // 무늬. 비어 있으면 hue 로 칠한다
-    var onKind: ((String) -> Void)?   // 우클릭 메뉴에서 종류를 골랐을 때
+    var onMenu: (() -> Void)?       // 우클릭했을 때
+    var paused = false              // 우클릭 판이 열려 있는 동안 제자리에 멈춰 있는다
     var label = "" { didSet { hideTag() } }                             // 이름표 글자
     var nameTag: NSWindow?              // 떠 있는 이름표
     var onClick: (() -> Void)?      // 끌지 않고 눌렀다 뗐을 때
@@ -1156,13 +1167,12 @@ final class PetView: NSView {
     let logging = ProcessInfo.processInfo.environment["MOCHIPET_LOG"] != nil
     var downAt = NSPoint.zero
     var timer: Timer?
-    var interval = 0.15
     var cache: [String: NSImage] = [:]
 
     // 창을 둘 자리. 소수점 좌표에 두면 창이 픽셀 격자에 걸쳐 1pt 넓게 잡힌다.
     var origin: NSPoint { NSPoint(x: pet.pos.x.rounded(), y: pet.pos.y.rounded()) }
 
-    var area: CGRect {              // Dock 과 메뉴바를 뺀 영역
+    var area: CGRect {              // Dock 과 메뉴 막대를 뺀 영역
         let v = (window?.screen ?? NSScreen.main)!.visibleFrame
         return CGRect(x: v.minX, y: v.minY, width: v.width - side, height: v.height - side)
     }
@@ -1179,21 +1189,9 @@ final class PetView: NSView {
     }
 
     func begin() {
-        let m = NSMenu()                // 종류만 여기서 넣는다. 세션 이름, 모든 펫, 색, 끄기는 main.swift 가 끼워 넣는다
-        for (title, k) in [("토끼", "bunny"), ("강아지", "dog"), ("고양이", "cat")] {
-            let i = m.addItem(withTitle: title, action: #selector(pickKind(_:)), keyEquivalent: "")
-            i.target = self; i.representedObject = k
-        }
-        menu = m                    // 우클릭 메뉴
         pet.pos = CGPoint(x: .random(in: area.minX...area.maxX), y: area.maxY)   // 화면 위에서 떨어지며 등장한다
         window?.setFrameOrigin(origin)
-        restartTimer()
-    }
-
-    func restartTimer() {
-        timer?.invalidate()
-        interval = tick
-        timer = Timer.scheduledTimer(timeInterval: interval, target: self, selector: #selector(step), userInfo: nil, repeats: true)
+        timer = Timer.scheduledTimer(timeInterval: tick, target: self, selector: #selector(step), userInfo: nil, repeats: true)
     }
 
     // 전역 크기·투명도·숨김을 이 펫 창에 입힌다.
@@ -1207,9 +1205,7 @@ final class PetView: NSView {
         if hidden { hideTag(); w.orderOut(nil) } else { w.orderFrontRegardless() }
     }
 
-    @objc func pickKind(_ i: NSMenuItem) {
-        if let k = i.representedObject as? String { onKind?(k) }
-    }
+    override func rightMouseDown(with e: NSEvent) { onMenu?() }
 
     func setMood(_ m: String) {
         pet.mood = m
@@ -1217,11 +1213,10 @@ final class PetView: NSView {
     }
 
     @objc func step() {
-        if hidden { return }
+        if hidden || paused { return }
         if grab != nil {
             pet.frame = (pet.frame + 1) % pet.action.frames.count
         } else {
-            // ponytail: 틱마다 창 목록을 새로 읽는다. 부담되면 0.5초 캐시로 바꾼다.
             let seen = screenWindows()
             pet.tick(in: area) { x, y in grounded ? area.minY : floorY(seen.wins, x, y) }   // 날지 않기를 켜면 발판은 화면 바닥뿐이라, 창 위에 있던 펫은 떨어져 내려온다
             collide(seen.pets)
@@ -1231,9 +1226,9 @@ final class PetView: NSView {
                 logged = pet.name
                 FileHandle.standardError.write("\(label.isEmpty ? "pet" : label) -> \(pet.name)\n".data(using: .utf8)!)
             }
-            slide(over: interval * pet.partial)
+            slide(over: tick * pet.partial)
             // 바닥에 막혀 일찍 도착하면 다음 틱을 기다리지 않고 바로 착지 동작으로 넘어간다
-            if pet.partial < 1 { perform(#selector(step), with: nil, afterDelay: interval * pet.partial) }
+            if pet.partial < 1 { perform(#selector(step), with: nil, afterDelay: tick * pet.partial) }
         }
         updateTag()
         needsDisplay = true
@@ -1299,10 +1294,7 @@ final class PetView: NSView {
 
     func sprite(_ name: String) -> NSImage {
         if let i = cache[name] { return i }
-        // sprites/<종류>/<프레임>.png 가 있으면 그 그림을 쓴다. 그 종류에 없는 프레임은 idle_0 으로 대신한다.
-        let png = [kind + "/" + name, kind + "/idle_0"]
-            .lazy.compactMap { NSImage(contentsOf: spriteDir.appendingPathComponent($0 + ".png")) }.first
-        let i = png ?? drawn(name, hue: hue, kind: kind, coat: coat)
+        let i = drawn(name, hue: hue, kind: kind, coat: coat)
         cache[name] = i
         return i
     }
@@ -1394,7 +1386,7 @@ func selftest() {
     p.mood = "waiting"; run(2_000); run(5_000)          // 승인 대기: 제자리에서 부르기만 한다
     precondition(seen == ["call"], "승인 대기 중 동작이 다름: \(seen)")
 
-    p.mood = "done"; run(2_000); run(5_000)             // 끝남: 확인받을 때까지 축하만 한다
+    p.mood = "done"; run(2_000); run(5_000)             // 완료: 확인받을 때까지 축하만 한다
     precondition(seen == ["cheer"] && p.mood == "done", "확인 전인데 다른 동작을 함: \(seen)")
 
     p.mood = "idle"; run(2_000); run(20_000)            // 확인받음: 평소로 돌아간다

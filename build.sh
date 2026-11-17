@@ -8,7 +8,7 @@ APP=MochiPet.app
 BIN=$APP/Contents/MacOS/MochiPet
 
 mkdir -p "$APP/Contents/MacOS"
-swiftc -O Pet.swift claude/*.swift -o "$BIN"
+swiftc -O Sources/*.swift -o "$BIN"
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>

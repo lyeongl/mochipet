@@ -1,0 +1,15 @@
+#!/bin/sh
+# 플러그인으로 설치했을 때 훅과 /pet 스킬이 부른다. 실행 파일이 없으면 처음 한 번 빌드한다.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIN="$ROOT/MochiPet.app/Contents/MacOS/MochiPet"
+# 삭제된 플러그인이면 아무것도 하지 않는다. Claude Code 는 플러그인을 지울 때 이 표시를 남기고 폴더는 14일 뒤에 지운다.
+# 그 사이에 열려 있던 세션이 펫을 다시 켜면 지워진 데이터 폴더에 파일이 다시 생기므로 여기서 막는다
+if [ -e "$ROOT/.orphaned_at" ]; then
+    [ "$1" = --hook ] || echo "MochiPet was uninstalled, so the pet can't start. Install the plugin again to use it."
+    exit 0
+fi
+if [ ! -x "$BIN" ]; then
+    [ "$1" = --hook ] && exit 0        # 훅은 빌드를 기다리지 않는다
+    "$ROOT/build.sh" >&2 || exit 1     # /pet on 이 처음 불렸을 때 빌드한다
+fi
+exec "$BIN" "$@"
