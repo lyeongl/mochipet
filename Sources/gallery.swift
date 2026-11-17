@@ -72,12 +72,12 @@ func exportGallery(to dir: URL) throws {
 
     // 틱마다 한 장씩 그려서 끝없이 도는 GIF 로 묶는다
     let sky = NSColor(srgbRed: 0.80, green: 0.90, blue: 0.97, alpha: 1)
-    func gif(_ name: String, _ w: CGFloat, _ h: CGFloat, ticks: Int, _ draw: (Int) -> Void) throws {
+    func gif(_ name: String, _ w: CGFloat, _ h: CGFloat, ticks: Int, clear: Bool = false, _ draw: (Int) -> Void) throws {   // clear 면 하늘색 바탕을 칠하지 않는다
         let url = dir.appendingPathComponent(name + ".gif")
         guard let out = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, ticks, nil) else { throw CocoaError(.fileWriteUnknown) }
         CGImageDestinationSetProperties(out, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
         for t in 0..<ticks {
-            let frame = bitmap(w, h) { sky.setFill(); NSRect(x: 0, y: 0, width: w, height: h).fill(); draw(t) }
+            let frame = bitmap(w, h) { if !clear { sky.setFill(); NSRect(x: 0, y: 0, width: w, height: h).fill() }; draw(t) }
             CGImageDestinationAddImage(out, frame.cgImage!, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.18]] as CFDictionary)
         }
         guard CGImageDestinationFinalize(out) else { throw CocoaError(.fileWriteUnknown) }
@@ -96,14 +96,14 @@ func exportGallery(to dir: URL) throws {
     try menuPicture().representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("menu.png"))
     try contextPicture().representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("context.png"))
     try bitmap(200, 200) { appIcon(200).draw(in: NSRect(x: 0, y: 0, width: 200, height: 200)) }.representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("icon.png"))
-    try gif("working", 160, 140, ticks: 2) { t in pet("work", kind: "dog", at: 26, tick: t) }
-    try gif("waiting", 160, 140, ticks: 4) { t in pet("call", at: 20, tick: t) }
-    try gif("done", 160, 140, ticks: 8) { t in pet("cheer", kind: "cat", at: 20, tick: t) }
+    try gif("working", 160, 140, ticks: 2, clear: true) { t in pet("work", kind: "dog", at: 26, tick: t) }
+    try gif("waiting", 160, 140, ticks: 4, clear: true) { t in pet("call", at: 20, tick: t) }
+    try gif("done", 160, 140, ticks: 8, clear: true) { t in pet("cheer", kind: "cat", at: 20, tick: t) }
     // 할 일이 없을 때 하는 놀이를 하나씩 세운다. 걷기, 달리기, 오르기, 떨어지기 같은 이동 동작은 뺀다
     let play = ["sleep", "munch", "fish", "ball", "flower", "box", "bubble", "balloon", "rope", "dance"]
     let looks: [(String, String)] = [("bunny", ""), ("dog", ""), ("cat", ""), ("bunny", "ivory"), ("dog", "shiba"), ("cat", "golden"), ("bunny", "cream"), ("dog", "pug"), ("cat", "gray"), ("bunny", "patch")]
     let perRow = 5                    // 상태 그림과 같은 크기로 보이게 다섯 마리씩 두 줄로 세운다
-    try gif("idle", 30 + CGFloat(perRow) * 110, 280, ticks: 24) { t in
+    try gif("idle", 30 + CGFloat(perRow) * 110, 280, ticks: 24, clear: true) { t in
         for (i, a) in play.enumerated() { pet(a, kind: looks[i].0, coat: looks[i].1, at: 10 + CGFloat(i % perRow) * 110, y: i < perRow ? 150 : 10, tick: t) }
     }
     // 가운데에 창 하나를 세우고, 그 윗변에 올라앉은 펫, 윗변에 뒷모습으로 매달린 펫, 창 앞에서 풍선을 들고 뜬 펫을 같이 보여 준다
