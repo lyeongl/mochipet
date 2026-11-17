@@ -1,26 +1,31 @@
-# MochiPet
+<div align="center">
+  <img src="gallery/hero.gif" alt="MochiPet" width="100%" />
+  <h1><img src="gallery/icon.png" alt="" width="44" align="absmiddle" />&nbsp;MochiPet</h1>
+  <p>A macOS desktop pet that shows, with its body, whether a Claude Code session<br>is working, waiting for approval, or done.</p>
+  <p>
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-yellow" />
+    <img alt="Swift" src="https://img.shields.io/badge/Swift-6.3-F05138?logo=swift&logoColor=white" />
+    <img alt="macOS" src="https://img.shields.io/badge/macOS-26.6-000000?logo=apple&logoColor=white" />
+    <img alt="AppKit" src="https://img.shields.io/badge/AppKit-native-0A84FF" />
+  </p>
+  <p><a href="README.md">한국어</a> · <b>English</b></p>
+</div>
 
-[한국어](README.md) | English
+---
 
-![macOS](https://img.shields.io/badge/macOS-26.6-000000?logo=apple&logoColor=white)
-![Swift](https://img.shields.io/badge/Swift-6.3-F05138?logo=swift&logoColor=white)
+## Supported AI tools
 
-![MochiPet](gallery/hero.gif)
+- **Claude Code**: the `claude` CLI in a terminal. Click the pet to switch to that terminal app.
+- **Claude Desktop**: sessions in the Code tab. Click the pet to open that session. The name tag shows the session title.
 
-A desktop pet for Code sessions in Claude Desktop.  
-Make one with `/pet on`!
+## Features
 
-## The pet shows the session state
-
-You can tell what Claude is doing from the pet alone, without looking at the session window.
-
-| Working | Waiting for approval | Done |
-|:---:|:---:|:---:|
-| ![Working](gallery/working.gif) | ![Waiting for approval](gallery/waiting.gif) | ![Done](gallery/done.gif) |
-| **Sits and hammers** | **Calls you with a `!`** | **Jumps in confetti** |
-| Starts when you send a prompt<br>and goes on until the turn ends | Keeps calling while a permission request waits.<br>Hammers again once you approve | Jumps when the turn ends. Click the pet or<br>open that session and it goes back to playing |
-
-Otherwise it plays alone: walks, sleeps, eats. Click the pet to open its session in Claude Desktop.
+- **Session state at a glance**: the pet hammers while the session works, raises a `!` while a permission request waits, and jumps in confetti when the turn ends.
+- **Jump to the session**: click the pet to switch to its session.
+- **One pet per session**: each session where you run `/pet on` gets a pet with a name tag above its head.
+- **Three pixel-art pets**: a bunny, a dog, and a cat, in patterns and colors.
+- **A pet that plays alone**: with nothing to do it walks, sleeps, fishes, and rides a balloon. There are more than 40 actions.
+- **Menu bar controls**: change opacity and size, keep pets on the ground, or hide them all.
 
 ## Install
 
@@ -55,7 +60,7 @@ claude plugin uninstall mochipet@mochipet
 
 ### Option 2. git clone
 
-Use this if you don't have the `claude` command or want to use your own art.
+Use this if you don't have the `claude` command.
 
 ```bash
 git clone https://github.com/lyeongl/mochipet.git
@@ -83,58 +88,54 @@ To remove it, run the command below. It removes only this pet's hooks, skill, se
 
 ## Usage
 
-### Commands
-
 Type these in a Claude session.
 
 | Command | What it does |
 |---|---|
 | `/pet on` | Turns on this session's pet. The kind and color are picked at random, avoiding the ones other pets already use |
-| `/pet on payment bug` | Turns it on with a name tag. Without a name, the session title from Claude Desktop becomes the name tag |
+| `/pet on session name` | Turns it on with a name tag. Without a name, the session title from Claude Desktop becomes the name tag |
 | `/pet kind dog` | Changes the kind: `bunny`, `dog`, or `cat` |
 | `/pet color` | Picks a new color at random |
-| `/pet color pink` | Sets the color. The names are listed under [Pet colors](#pet-colors) |
+| `/pet color pink` | Sets the color. The names are in the colors picture below |
 | `/pet color default` | Goes back to the default color of that kind |
-| `/pet name new name` | Changes the name tag |
+| `/pet name new session name` | Changes the name tag |
 | `/pet off` | Turns the pet off |
 
-### Menu bar icon
+## Screenshots
 
-While a pet is on screen, a paw icon appears in the menu bar. It changes all pets at once.
+<table>
+  <tr>
+    <td align="center" colspan="2" width="33%"><img src="gallery/working.gif" alt="Working" width="160" /></td>
+    <td align="center" colspan="2" width="33%"><img src="gallery/waiting.gif" alt="Waiting for approval" width="160" /></td>
+    <td align="center" colspan="2" width="33%"><img src="gallery/done.gif" alt="Done" width="160" /></td>
+  </tr>
+  <tr>
+    <th align="center" colspan="2">Working</th>
+    <th align="center" colspan="2">Waiting for approval</th>
+    <th align="center" colspan="2">Done</th>
+  </tr>
+  <tr>
+    <td align="center" colspan="6"><img src="gallery/idle.gif" alt="Idle" width="580" /></td>
+  </tr>
+  <tr>
+    <th align="center" colspan="6">Idle</th>
+  </tr>
+  <tr>
+    <td align="center" colspan="3"><img src="gallery/menu.png" alt="Menu bar" width="290" /></td>
+    <td align="center" colspan="3"><img src="gallery/context.png" alt="Right-click on a pet" width="330" /></td>
+  </tr>
+  <tr>
+    <th align="center" colspan="3">Menu bar</th>
+    <th align="center" colspan="3">Right-click on a pet</th>
+  </tr>
+</table>
 
-![The menu of the paw icon in the menu bar](gallery/menu.png)
-
-| Item | What it does |
-|---|---|
-| 투명도 (Opacity) | 30–100% |
-| 크기 (Size) | 60–180pt, snapped to sizes where the pixels stay even |
-| 속도 (Speed) | Three steps: slow, normal, fast |
-| 랜덤 (Random) | 무늬 랜덤 (patterns) or 컬러 랜덤 (colors). Chooses which group a random color is picked from |
-| 이 화면으로 모으기 (Gather here) | Moves every pet to the screen where you opened the menu |
-| 날지 않기 (No flying) | Pets stay on the bottom of the screen. They do not fly, ride balloons, or climb onto windows. Click again to bring it back |
-| 모두 색 섞기 (Shuffle all colors) | Picks a new random color for every pet. Kinds stay the same.<br>Colors not yet on screen come first; once all are used, they repeat |
-| 모두 숨기기 (Hide all) | Hides and pauses the pets. Click again to bring them back |
-| 종료 (Quit) | Quits the pet app. Pets that were on come back with the next `/pet on` |
-
-## Pet colors
+### Colors
 
 ![A bunny, dog, and cat in every color. Patterns on top, colors below](gallery/colors.png)
 
-- Pick a color with `/pet color <name>` or from "색" (Color) in the pet's right-click menu. A number from 0 to 360 gives the color at that angle on the color wheel.
+- Pick a color with `/pet color <name>` or by right-clicking the pet. A number from 0 to 360 gives the color at that angle on the color wheel.
 
-## Pet kinds
+## License
 
-![bunny](gallery/bunny.png)
-
-![dog](gallery/dog.png)
-
-![cat](gallery/cat.png)
-
-To use your own art, follow these steps. This works when you installed with Option 2.
-
-1. Make `sprites/<kind>/` in this folder.
-2. Add square PNGs named after the frames in the pictures above (`idle_0.png`, `walk_0.png` …).
-3. Type `/pet kind <kind>`.
-
-- Missing frames fall back to `idle_0.png`.
-- Draw the pet facing left.
+[MIT](LICENSE)
