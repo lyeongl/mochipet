@@ -72,6 +72,7 @@ if [ "$1" = uninstall ]; then
     echo "스킬을 지웠다"
 else
     mkdir -p "$SKILL"
-    sed "s|__BIN__|\"$BIN\"|g" skill/SKILL.md > "$SKILL/SKILL.md"
+    # 스킬 파일은 플러그인과 같이 쓴다. 플러그인용 경로를 이 폴더의 실행 파일로 바꿔서 넣는다.
+    sed "s|\"\${CLAUDE_PLUGIN_ROOT}/scripts/mochipet\"|\"$BIN\"|g" skills/pet/SKILL.md > "$SKILL/SKILL.md"
     echo "설치 끝. Claude 세션에서 /pet on"
 fi

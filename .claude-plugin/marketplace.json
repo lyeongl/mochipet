@@ -1,0 +1,14 @@
+{
+  "name": "mochipet",
+  "description": "MochiPet: a desktop pet for Code sessions in Claude Desktop (macOS)",
+  "owner": {
+    "name": "lyeongl"
+  },
+  "plugins": [
+    {
+      "name": "mochipet",
+      "source": "./",
+      "description": "A desktop pet for Code sessions in Claude Desktop (macOS)"
+    }
+  ]
+}
