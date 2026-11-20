@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 //   <dir>/icon.png                             앱 아이콘
 //   <dir>/menu.png                             메뉴 막대 아이콘과 거기서 열리는 판
 //   <dir>/context.png                          펫을 우클릭했을 때 뜨는 판
+//   <dir>/float.png, float.dark.png            띄운 창. 밝은 모양과 어두운 모양
 //   <dir>/colors.png                           색마다 종류별로 한 마리씩 세운 한 장. 무늬와 컬러 두 묶음이다
 // 글자가 들어가는 그림은 한국어로도 뽑는다 (hero.ko.gif 처럼 이름 끝에 .ko 가 붙는다)
 
@@ -88,6 +89,7 @@ private func export(to dir: URL, tail: String) throws {
         (tag as NSString).draw(at: NSPoint(x: r.minX + 8, y: r.minY + 2), withAttributes: attrs)
     }
     try menuPicture().representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("menu\(tail).png"))
+    for dark in [false, true] { try floatPicture(dark: dark).representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("float\(dark ? ".dark" : "")\(tail).png")) }
     try contextPicture().representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("context\(tail).png"))
     if tail.isEmpty {
         try bitmap(200, 200) { appIcon(200).draw(in: NSRect(x: 0, y: 0, width: 200, height: 200)) }.representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("icon.png"))
@@ -123,21 +125,21 @@ private func export(to dir: URL, tail: String) throws {
 
 // 메뉴 막대의 발바닥 아이콘과 거기서 열리는 판을 그린다. 판은 앱이 쓰는 뷰(main.swift 의 Bar.panel)를 그대로 찍는다.
 // 화면을 찍은 그림은 다른 아이콘과 뒤 배경이 같이 찍혀서, 예시 세션 일곱을 넣은 판만 따로 찍는다
-// 화면 밖 창에 뷰를 얹어서 밝은 모양으로 찍는다
-private func snapshot(_ v: NSView) -> NSBitmapImageRep {
+// 화면 밖 창에 뷰를 얹어서 찍는다. size 를 안 주면 뷰가 바라는 크기로, dark 를 안 주면 밝은 모양으로 찍는다
+private func snapshot(_ v: NSView, size: NSSize? = nil, dark: Bool = false) -> NSBitmapImageRep {
     _ = NSApplication.shared
-    let win = NSWindow(contentRect: NSRect(origin: .zero, size: v.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
-    win.appearance = NSAppearance(named: .aqua); win.contentView = v; v.layoutSubtreeIfNeeded()
+    let win = NSWindow(contentRect: NSRect(origin: .zero, size: size ?? v.fittingSize), styleMask: .borderless, backing: .buffered, defer: false)
+    win.appearance = NSAppearance(named: dark ? .darkAqua : .aqua); win.contentView = v; v.layoutSubtreeIfNeeded()
     let shot = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
     v.cacheDisplay(in: v.bounds, to: shot)
     return shot
 }
 // 찍어 둔 판을 그림자 깔린 둥근 판 위에 그린다
-private func panel(_ shot: NSBitmapImageRep, in r: NSRect) {
+private func panel(_ shot: NSBitmapImageRep, in r: NSRect, base: NSColor = NSColor(white: 0.965, alpha: 1)) {
     let shape = NSBezierPath(roundedRect: r, xRadius: 12, yRadius: 12)
     NSGraphicsContext.saveGraphicsState()
     let shadow = NSShadow(); shadow.shadowColor = NSColor(white: 0, alpha: 0.28); shadow.shadowBlurRadius = 12; shadow.shadowOffset = NSSize(width: 0, height: -3); shadow.set()
-    NSColor(white: 0.965, alpha: 1).setFill(); shape.fill()
+    base.setFill(); shape.fill()
     NSGraphicsContext.restoreGraphicsState()
     NSGraphicsContext.saveGraphicsState(); shape.addClip(); shot.draw(in: r); NSGraphicsContext.restoreGraphicsState()
 }
@@ -153,14 +155,34 @@ private func contextPicture() -> NSBitmapImageRep {
     }
 }
 
-private func menuPicture() -> NSBitmapImageRep {
-    let b = Bar(), t = Date()
-    scale = 1; opacity = 1; grounded = false; hidden = false     // 저장해 둔 설정과 상관없이 같은 그림이 나오게 한다
+// 판과 띄운 창에 넣는 예시 세션 일곱
+private func sampleRows() -> [Row] {
+    let t = Date()
     // 다섯 줄 안에 상태가 다 보이게 고른다: 승인 대기 둘, 진행 중 하나(긴 이름), 완료 하나, 노는 중 하나. 나머지 둘은 "더" 표시 뒤로 간다
     let sample: [(String, String, Double, String, String)] = [(L("결제 버그 수정", "Fix payment bug"), "waiting", 182, "bunny", ""), (L("배포 스크립트", "Deploy script"), "waiting", 18, "cat", "golden"),
         (L("결제 재시도 큐를 고치고 웹훅마다 멱등 키를 넣기", "Refactor the payment retry queue and add idempotency keys"), "working", 130, "bunny", "ivory"), (L("문서 정리", "Tidy docs"), "done", 720, "cat", ""),
         ("mochipet", "idle", 2460, "dog", ""), (L("로그 조사", "Log digging"), "idle", 4300, "dog", "shiba"), (L("테스트 추가", "Add tests"), "idle", 7700, "bunny", "cream")]
-    b.fill(sample.enumerated().map { i, x in Row(id: "\(i)", name: x.0, state: x.1, since: t - x.2, kind: x.3, look: x.4, host: "") })   // 다섯 줄을 넘겨서 "더" 표시가 보이게 한다
+    return sample.enumerated().map { i, x in Row(id: "\(i)", name: x.0, state: x.1, since: t - x.2, kind: x.3, look: x.4, host: "") }
+}
+// 띄운 창. 앱이 쓰는 창의 내용(main.swift 의 Bar.floatWin)을 그대로 찍는다
+private func floatPicture(dark: Bool) -> NSBitmapImageRep {
+    let b = Bar(), size = NSSize(width: 304, height: 424)
+    scale = 1
+    b.float.fill(sampleRows())
+    let shot = snapshot(b.floatWin.contentView!, size: size, dark: dark)
+    return bitmap(size.width + 24, size.height + 28) {
+        panel(shot, in: NSRect(x: 12, y: 16, width: size.width, height: size.height), base: dark ? NSColor(white: 0.2, alpha: 1) : NSColor(white: 0.965, alpha: 1))
+        // 창 버튼 셋은 창의 제목 막대에 붙어 있어서 내용과 같이 찍히지 않는다. 같은 자리에 그린다
+        for (i, c) in [NSColor(red: 1, green: 0.37, blue: 0.34, alpha: 1), NSColor(red: 1, green: 0.74, blue: 0.18, alpha: 1), NSColor(red: 0.16, green: 0.78, blue: 0.25, alpha: 1)].enumerated() {
+            c.setFill(); NSBezierPath(ovalIn: NSRect(x: 12 + 20 + CGFloat(i) * 23, y: 16 + size.height - 33, width: 14, height: 14)).fill()
+        }
+    }
+}
+
+private func menuPicture() -> NSBitmapImageRep {
+    let b = Bar()
+    scale = 1; opacity = 1; grounded = false; hidden = false     // 저장해 둔 설정과 상관없이 같은 그림이 나오게 한다
+    b.fill(sampleRows())   // 다섯 줄을 넘겨서 "더" 표시가 보이게 한다
     let v = b.panel
     b.refresh(); b.random.selectedSegment = 0
     let shot = snapshot(v)

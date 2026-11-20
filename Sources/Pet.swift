@@ -57,7 +57,7 @@ let actions: [String: Action] = [
     "hopoff": Action(frames: ["hop_0", "hop_0", "fall_0", "fall_1", "fall_0"], v: 1, dy: 50, accel: -20, next: [("hopoff", 100)], onEdge: "flinch"),
     // 다른 펫 위로 떨어지면 그 둘레를 따라 굴러 내려온다. 떨어지는 동작이라 바닥에 닿으면 착지한다
     "rolloff": Action(frames: ["roll_0", "roll_1", "roll_2", "roll_3"], v: 7, dy: -8, accel: -6, next: [("rolloff", 100)], onEdge: "land"),
-    // 뒤에 있는 창을 등지고 타고 오른다. 창 위에 설 자리가 있으면 뷰가 거기서 멈춰 세우고,
+    // 뒤에 있는 창을 등지고 타고 오른다. 오르는 길에 창 윗변이 있으면 뷰가 거기에 매달렸다가 올려 세우고 (PetView.climbing),
     // 없으면 화면 꼭대기까지 가서 매달렸다가 떨어진다.
     "climb": Action(frames: ["climb_0", "climb_1"], dy: 9, air: true, loops: 400...400, next: [("fall", 100)], onEdge: "hang"),
     "hang":  Action(frames: ["hang_0", "hang_1"], air: true, loops: 5...12, next: [("fall", 100)]),
@@ -1128,26 +1128,41 @@ func paintProps(_ k: Look, _ body: NSRect, _ mouth: NSPoint, _ line: NSColor, do
 
 // 화면에 보이는 창들을 AppKit 좌표로 돌려준다. wins 는 다른 앱의 일반 창(앞에 있는 순서), pets 는 펫 창이다.
 // 창 목록을 묻는 일이 펫 앱이 쓰는 CPU 의 대부분이라(펫 8마리에서 85%), 한 틱 안에서는 한 번만 묻고 모든 펫이 같이 쓴다
-var seenWindows: (at: Double, wins: [CGRect], pets: [(id: Int, rect: CGRect)]) = (0, [], [])
+let seenLock = NSLock()
+nonisolated(unsafe) var seenWindows: (at: Double, wins: [CGRect], pets: [(id: Int, rect: CGRect)]) = (0, [], [])
+var perch = 0       // 펫이 올라설 수 있는 우리 창(띄운 세션 목록)의 번호. 없으면 0
 func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
+    seenLock.lock(); defer { seenLock.unlock() }
     let now = CFAbsoluteTimeGetCurrent()
-    if now - seenWindows.at < tick * 0.9 { return (seenWindows.wins, seenWindows.pets) }
-    let primaryH = NSScreen.screens[0].frame.height   // CGWindow 좌표는 위가 0 이라 뒤집는다
-    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-    var wins: [CGRect] = [], pets: [(id: Int, rect: CGRect)] = []
-    for w in list {
-        guard (w[kCGWindowAlpha as String] as? Double ?? 1) > 0, let b = w[kCGWindowBounds as String] as? NSDictionary,
-              let q = CGRect(dictionaryRepresentation: b) else { continue }
-        let r = CGRect(x: q.minX, y: primaryH - q.maxY, width: q.width, height: q.height)
-        if w[kCGWindowLayer as String] as? Int == 0 {          // 일반 창. Dock·메뉴 막대는 빠진다
-            if r.width >= side { wins.append(r) }
-        } else if w[kCGWindowOwnerName as String] as? String == "MochiPet", r.width == r.height, r.width >= 60,
-                  let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴 막대 아이콘과 구별된다
-            pets.append((id, r))
+    if now - seenWindows.at >= tick * 0.9 {
+        seenWindows.at = now                                 // 묻는 동안 또 묻지 않는다
+        // 창 목록을 묻는 데 3~12ms 가 걸려서 뒤쪽 스레드에서 묻는다. 앞쪽 스레드에서 물으면 목록 스크롤이 끊긴다
+        // 펫은 한 틱 전의 창을 보고 움직인다
+        let primaryH = NSScreen.screens[0].frame.height, mine = perch, least = side   // CGWindow 좌표는 위가 0 이라 뒤집는다
+        DispatchQueue.global(qos: .userInitiated).async {
+            let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+            var wins: [CGRect] = [], pets: [(id: Int, rect: CGRect)] = []
+            for w in list {
+                guard (w[kCGWindowAlpha as String] as? Double ?? 1) > 0, let b = w[kCGWindowBounds as String] as? NSDictionary,
+                      let q = CGRect(dictionaryRepresentation: b) else { continue }
+                let r = CGRect(x: q.minX, y: primaryH - q.maxY, width: q.width, height: q.height)
+                if w[kCGWindowLayer as String] as? Int == 0 || w[kCGWindowNumber as String] as? Int == mine {   // 일반 창과 띄운 세션 목록. Dock·메뉴 막대는 빠진다
+                    if r.width >= least { wins.append(r) }
+                } else if w[kCGWindowOwnerName as String] as? String == "MochiPet", r.width == r.height, r.width >= 60,
+                          let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴 막대 아이콘과 구별된다
+                    pets.append((id, r))
+                }
+            }
+            seenLock.lock(); seenWindows.wins = wins; seenWindows.pets = pets; seenLock.unlock()
         }
     }
-    seenWindows = (now, wins, pets)
-    return (wins, pets)
+    return (seenWindows.wins, seenWindows.pets)
+}
+
+// x 줄에서 y 보다 높고 top 이하인 창 윗변 가운데 가장 낮은 것. 앞 창에 가려진 윗변은 뺀다. wins 는 앞에 있는 순서다
+func ledgeAbove(_ wins: [CGRect], _ x: CGFloat, _ y: CGFloat, _ top: CGFloat) -> CGFloat? {
+    wins.enumerated().filter { i, w in w.minX <= x && x <= w.maxX && w.maxY > y && w.maxY <= top
+        && !wins[..<i].contains { $0.contains(CGPoint(x: x, y: w.maxY - 1)) } }.map(\.element.maxY).min()
 }
 
 final class PetView: NSView {
@@ -1162,12 +1177,14 @@ final class PetView: NSView {
     var nameTag: NSWindow?              // 떠 있는 이름표
     var onClick: (() -> Void)?      // 끌지 않고 눌렀다 뗐을 때
     var grab: NSPoint?              // 끌고 있는 동안: 마우스 위치 - 펫 원점
-    var climbTop: CGFloat?          // 타고 오르는 중이면 멈춰 설 높이. 설 자리가 없으면 무한대로 둔다
+    var climbTop: CGFloat?          // 타고 오르는 중이면 매달릴 창 윗변의 높이. 없으면 무한대로 둔다
+    var ledge: CGFloat?             // 창 윗변에 매달려 있는 동안 그 윗변의 높이
     var logged = ""                 // MOCHIPET_LOG 를 주고 실행하면 동작이 바뀔 때마다 한 줄씩 찍는다
     let logging = ProcessInfo.processInfo.environment["MOCHIPET_LOG"] != nil
     var downAt = NSPoint.zero
     var timer: Timer?
     var cache: [String: NSImage] = [:]
+    var cachedFor = ""                 // cache 가 어느 동작의 그림인지
 
     // 창을 둘 자리. 소수점 좌표에 두면 창이 픽셀 격자에 걸쳐 1pt 넓게 잡힌다.
     var origin: NSPoint { NSPoint(x: pet.pos.x.rounded(), y: pet.pos.y.rounded()) }
@@ -1192,6 +1209,7 @@ final class PetView: NSView {
         pet.pos = CGPoint(x: .random(in: area.minX...area.maxX), y: area.maxY)   // 화면 위에서 떨어지며 등장한다
         window?.setFrameOrigin(origin)
         timer = Timer.scheduledTimer(timeInterval: tick, target: self, selector: #selector(step), userInfo: nil, repeats: true)
+        RunLoop.main.add(timer!, forMode: .common)           // 메뉴 막대의 메뉴가 열려 있는 동안에도 움직인다
     }
 
     // 전역 크기·투명도·숨김을 이 펫 창에 입힌다.
@@ -1271,20 +1289,26 @@ final class PetView: NSView {
         pet.meet(others.filter { $0.id != me }.map(\.rect), in: area)
     }
 
-    // 타고 오르기는 뒤에 창이 있을 때만 한다. 창 위에 설 자리가 있으면 거기까지만 오르고 올라선다.
+    // 타고 오르기는 뒤에 창이 있을 때만 한다. 오르는 길에서 가장 가까운 창 윗변에 매달렸다가(hang) 그 위로 올라선다.
+    // 그런 윗변이 없으면 화면 꼭대기까지 가서 매달렸다가 떨어진다 (동작 표의 onEdge).
     func climbing(_ wins: [CGRect]) {
-        guard pet.name == "climb" else { climbTop = nil; return }
-        if climbTop == nil {                                     // 방금 시작했다. 아직 움직이기 전이다
-            let behind = CGPoint(x: pet.pos.x + side / 2, y: pet.pos.y + side / 2)
-            guard let w = wins.first(where: { $0.contains(behind) }), w.maxY - pet.pos.y > 150 else { pet.start("idle"); return }
-            climbTop = w.maxY <= area.maxY ? w.maxY : .infinity   // 무한대면 화면 꼭대기에서 매달리게 된다 (동작 표의 onEdge)
+        if let top = ledge, pet.name != "hang" {                 // 매달리기가 끝났다. 그 창이 그대로 있으면 올라선다
+            ledge = nil
+            if pet.name == "fall", !grounded, floorY(wins, pet.pos.x, top) == top { pet.pos.y = top; pet.start("idle") }
         }
-        if let top = climbTop, pet.pos.y >= top { pet.pos.y = top; climbTop = nil; pet.start("idle") }
+        guard pet.name == "climb" else { climbTop = nil; return }
+        let cx = pet.pos.x + side / 2
+        if climbTop == nil {                                     // 방금 시작했다. 아직 움직이기 전이다
+            guard let w = wins.first(where: { $0.contains(CGPoint(x: cx, y: pet.pos.y + side / 2)) }), w.maxY - pet.pos.y > 150 else { pet.start("idle"); return }
+            climbTop = ledgeAbove(wins, cx, pet.pos.y + 150, area.maxY) ?? .infinity
+        }
+        let grip = 68 * scale                                    // 매달린 그림에서 손이 있는 높이. dangle 의 drop 과 같다
+        if let top = climbTop, pet.pos.y >= top - grip { pet.pos.y = top - grip; climbTop = nil; ledge = top; pet.start("hang") }
     }
 
     // 창을 pet.pos 까지 t 초에 걸쳐 등속으로 옮긴다. 틱 사이를 메워서 움직임이 끊기지 않는다.
     func slide(over t: Double) {
-        guard let w = window else { return }
+        guard let w = window, w.frame.origin != origin else { return }   // 자리가 그대로면 애니메이션을 걸지 않는다. 앉거나 자는 펫이 화면 주사율마다 계산하지 않게
         NSAnimationContext.runAnimationGroup { c in
             c.duration = t; c.timingFunction = CAMediaTimingFunction(name: .linear)
             // 크기는 늘 고정값을 준다. 움직이는 도중의 w.frame.size 를 읽어 되먹이면 반올림 오차가 쌓여 창이 늘어난다.
@@ -1293,6 +1317,7 @@ final class PetView: NSView {
     }
 
     func sprite(_ name: String) -> NSImage {
+        if cachedFor != pet.name { cache.removeAll(); cachedFor = pet.name }   // 지난 동작의 그림은 버린다. 다 들고 있으면 펫 8마리에서 10분에 287MB 까지 쌓인다
         if let i = cache[name] { return i }
         let i = drawn(name, hue: hue, kind: kind, coat: coat)
         cache[name] = i
@@ -1311,7 +1336,7 @@ final class PetView: NSView {
     override func mouseDown(with e: NSEvent) {
         downAt = NSEvent.mouseLocation
         pet.pos = window!.frame.origin; slide(over: 0)   // 미끄러지던 중이면 그 자리에서 멈춘다
-        grab = NSPoint(x: downAt.x - pet.pos.x, y: downAt.y - pet.pos.y)
+        grab = NSPoint(x: downAt.x - pet.pos.x, y: downAt.y - pet.pos.y); ledge = nil
         pet.start("held")
         needsDisplay = true
     }

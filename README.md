@@ -26,6 +26,7 @@
 - **Three pixel-art pets**: a bunny, a dog, and a cat, each in several patterns and colors.
 - **Plays on its own**: when idle, it walks, naps, fishes, rides a balloon, and more.
 - **Menu bar controls**: change opacity and size, keep pets on the ground, or hide them all.
+- **Floating session list**: pop the session list out of the menu bar into a small window that stays above other windows, including full-screen ones.
 
 ## Install
 
@@ -83,7 +84,7 @@ Type these in a Claude session.
 
 ## Screenshots
 
-<table>
+<table align="center">
   <tr>
     <td align="center" colspan="2" width="33%"><img src="gallery/working.gif" alt="Working" width="160" /></td>
     <td align="center" colspan="2" width="33%"><img src="gallery/waiting.gif" alt="Waiting for approval" width="160" /></td>
@@ -101,12 +102,20 @@ Type these in a Claude session.
     <th align="center" colspan="6">Idle</th>
   </tr>
   <tr>
-    <td align="center" colspan="3"><img src="gallery/menu.png" alt="Menu bar" width="290" /></td>
-    <td align="center" colspan="3"><img src="gallery/context.png" alt="Right-click on a pet" width="330" /></td>
+    <td align="center" colspan="2"><img src="gallery/menu.png" alt="Menu bar" width="310" /></td>
+    <td align="center" colspan="2"><img src="gallery/float.png" alt="Floating list (light)" width="310" /></td>
+    <td align="center" colspan="2"><img src="gallery/float.dark.png" alt="Floating list (dark)" width="310" /></td>
   </tr>
   <tr>
-    <th align="center" colspan="3">Menu bar</th>
-    <th align="center" colspan="3">Right-click on a pet</th>
+    <th align="center" colspan="2">Menu bar</th>
+    <th align="center" colspan="2">Floating list (light)</th>
+    <th align="center" colspan="2">Floating list (dark)</th>
+  </tr>
+  <tr>
+    <td align="center" colspan="6"><img src="gallery/context.png" alt="Right-click on a pet" width="330" /></td>
+  </tr>
+  <tr>
+    <th align="center" colspan="6">Right-click on a pet</th>
   </tr>
 </table>
 

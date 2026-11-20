@@ -26,6 +26,7 @@
 - **세 종류의 도트 펫**: 토끼, 강아지, 고양이에 무늬와 컬러를 입힙니다.
 - **혼자 놀기**: 할 일이 없으면 걷고, 자고, 낚시하고, 풍선을 탑니다.
 - **메뉴 막대 조절**: 투명도와 크기를 바꾸고, 날지 않게 하거나 모두 숨깁니다.
+- **띄워 두는 세션 목록**: 메뉴 막대의 세션 목록을 작은 창으로 띄워 둡니다. 다른 창과 전체화면 위에 보입니다.
 
 ## 설치
 
@@ -84,7 +85,7 @@ Claude 세션에서 아래 명령을 입력합니다.
 
 ## 스크린샷
 
-<table>
+<table align="center">
   <tr>
     <td align="center" colspan="2" width="33%"><img src="gallery/working.gif" alt="진행 중" width="160" /></td>
     <td align="center" colspan="2" width="33%"><img src="gallery/waiting.gif" alt="승인 대기" width="160" /></td>
@@ -102,12 +103,20 @@ Claude 세션에서 아래 명령을 입력합니다.
     <th align="center" colspan="6">노는 중</th>
   </tr>
   <tr>
-    <td align="center" colspan="3"><img src="gallery/menu.ko.png" alt="메뉴 막대" width="290" /></td>
-    <td align="center" colspan="3"><img src="gallery/context.ko.png" alt="펫 우클릭 메뉴" width="330" /></td>
+    <td align="center" colspan="2"><img src="gallery/menu.ko.png" alt="메뉴 막대" width="310" /></td>
+    <td align="center" colspan="2"><img src="gallery/float.ko.png" alt="띄운 창 (밝은 모드)" width="310" /></td>
+    <td align="center" colspan="2"><img src="gallery/float.dark.ko.png" alt="띄운 창 (어두운 모드)" width="310" /></td>
   </tr>
   <tr>
-    <th align="center" colspan="3">메뉴 막대</th>
-    <th align="center" colspan="3">펫 우클릭 메뉴</th>
+    <th align="center" colspan="2">메뉴 막대</th>
+    <th align="center" colspan="2">띄운 창 (밝은 모드)</th>
+    <th align="center" colspan="2">띄운 창 (어두운 모드)</th>
+  </tr>
+  <tr>
+    <td align="center" colspan="6"><img src="gallery/context.ko.png" alt="펫 우클릭 메뉴" width="330" /></td>
+  </tr>
+  <tr>
+    <th align="center" colspan="6">펫 우클릭 메뉴</th>
   </tr>
 </table>
 
