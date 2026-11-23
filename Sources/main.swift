@@ -174,17 +174,14 @@ if let cmd = args.dropFirst().first, ["--on", "--off", "--color", "--name", "--k
     guard let f = file(env["CLAUDE_CODE_SESSION_ID"] ?? "") else {
         print(L("CLAUDE_CODE_SESSION_ID 가 없어서 어느 세션인지 알 수 없음", "CLAUDE_CODE_SESSION_ID is not set, so the session is unknown")); exit(1)
     }
-    if cmd == "--off" { try? fm.removeItem(at: f); print(L("펫 끔", "Pet off")); exit(0) }
+    // 끈 세션은 .off 표시를 남긴다. 자동으로 켜기가 다음 프롬프트에 다시 켜지 않게 한다 (이름에 점이 있어서 세션 파일로 읽히지 않는다)
+    let off = f.appendingPathExtension("off")
+    if cmd == "--off" { try? fm.removeItem(at: f); try? Data().write(to: off); print(L("펫 끔", "Pet off")); exit(0) }
     let name = value(after: "--name").map { String($0.replacingOccurrences(of: "\n", with: " ").prefix(30)) }
     var l = readSession(f)
     if l == nil {
         guard cmd == "--on" else { print(L("이 세션은 펫이 꺼져 있음. /pet on 을 먼저 해야 함", "This session has no pet. Run /pet on first")); exit(1) }
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        // 스킬은 턴 도중에 불리므로 working 으로 시작한다
-        // 종류와 색을 무작위로 정한다. 종류를 먼저 뽑고, 그 종류가 쓰는 색 중에서 색을 뽑는다
-        // 다른 펫이 입은 색은 이름으로 견준다 (lookName). 기본 색은 종류마다 다른 무늬라서, 빈 줄끼리 같다고 보면 샴 고양이가 있다고 흰 토끼를 못 뽑는다
-        let others = sessionFiles().compactMap(readSession), kind = randomKind(used: others.map { $0[5] })
-        l = ["working", fm.currentDirectoryPath, host(env), randomLook(kind: kind, used: others.map { lookName($0[3], kind: $0[5]) }, colorFirst: colorFirst), "", kind]
+        l = newPet(cwd: fm.currentDirectoryPath)
     }
     if cmd == "--color" {
         let want = value(after: "--color")?.lowercased()
@@ -203,26 +200,45 @@ if let cmd = args.dropFirst().first, ["--on", "--off", "--color", "--name", "--k
     }
     if let n = name { l![4] = n }
     writeSession(f, l!)
-    if cmd == "--on" {              // 펫 앱이 안 떠 있으면 띄운다 (-g: 앞으로 가져오지 않는다)
-        let open = Process()
-        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = ["-g", Bundle.main.bundleURL.path]
-        try open.run(); open.waitUntilExit()
-    }
+    if cmd == "--on" { try? fm.removeItem(at: off); launch() }
     print(["--on": L("펫 켬", "Pet on"), "--color": L("색 바꿈", "Color changed"), "--name": L("이름 바꿈", "Name changed"), "--kind": L("종류 바꿈", "Kind changed")][cmd]!); exit(0)
 }
 
 if args.count >= 3, args[1] == "--hook" {
     let j = (try? JSONSerialization.jsonObject(with: FileHandle.standardInput.readDataToEndOfFile())) as? [String: Any]
     // 펫을 켠 세션만 건드린다. 훅은 stdout 이 대화에 섞일 수 있어서 아무것도 찍지 않는다.
-    guard let f = file(j?["session_id"] as? String ?? ""), var l = readSession(f) else { exit(0) }
-    if args[2] == "end" { try? fm.removeItem(at: f); exit(0) }
+    guard let f = file(j?["session_id"] as? String ?? "") else { exit(0) }
+    let off = f.appendingPathExtension("off")
+    if args[2] == "end" { try? fm.removeItem(at: f); try? fm.removeItem(at: off); exit(0) }
+    var l: [String]
+    if let old = readSession(f) { l = old }
+    // 자동으로 켜기: 펫이 없는 세션에 첫 프롬프트가 들어오면 켠다. /pet off 로 끈 세션은 그대로 둔다.
+    // 세션이 시작될 때(SessionStart) 켜지 않는 까닭은, 쓰지도 않은 세션에 펫이 생기기 때문이다
+    else if args[2] == "working", setting("autoOn") as? Bool == true, !fm.fileExists(atPath: off.path) {
+        l = newPet(cwd: j?["cwd"] as? String ?? fm.currentDirectoryPath); launch()
+    } else { exit(0) }
     // resume 은 도구가 끝날 때마다 불린다. 승인을 기다리던 중이었을 때만 working 으로 되돌린다.
     if args[2] == "resume" && l[0] != "waiting" { exit(0) }
     l[0] = args[2] == "resume" ? "working" : args[2]
     // 훅이 알려 주는 세션 기록 파일의 경로를 일곱째 줄에 적어 둔다. 펫 앱이 거기서 세션 제목을 읽는다 (transcriptTitle)
     if let t = j?["transcript_path"] as? String, !t.contains("\n") { l = Array(l.prefix(6)) + [t] }
     writeSession(f, l); exit(0)
+}
+
+// 새 펫의 세션 파일 줄. 프롬프트를 받은 턴 도중에 켜지므로 working 으로 시작한다
+// 종류와 색을 무작위로 정한다. 종류를 먼저 뽑고, 그 종류가 쓰는 색 중에서 색을 뽑는다
+// 다른 펫이 입은 색은 이름으로 견준다 (lookName). 기본 색은 종류마다 다른 무늬라서, 빈 줄끼리 같다고 보면 샴 고양이가 있다고 흰 토끼를 못 뽑는다
+func newPet(cwd: String) -> [String] {
+    try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    let others = sessionFiles().compactMap(readSession), kind = randomKind(used: others.map { $0[5] })
+    return ["working", cwd, host(env), randomLook(kind: kind, used: others.map { lookName($0[3], kind: $0[5]) }, colorFirst: colorFirst), "", kind]
+}
+// 펫 앱이 안 떠 있으면 띄운다 (-g: 앞으로 가져오지 않는다)
+func launch() {
+    let open = Process()
+    open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    open.arguments = ["-g", Bundle.main.bundleURL.path]
+    try? open.run(); open.waitUntilExit()
 }
 
 // 세션 파일 셋째 줄에 적을 값. Claude Desktop에서 켰으면 데스크톱 세션 id 이고,
@@ -694,7 +710,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     let floatPad: CGFloat = 62                              // 띄운 창에서 목록 말고 위아래가 차지하는 높이: 제목 막대 쪽 48 + 아래 여백 14
     var floating = false                                    // 띄운 창이 떠 있는지
     lazy var floatButton = NSButton(image: symbol("pip.exit"), target: self, action: #selector(toggleFloat))
-    let ground = NSSwitch(), hide = NSSwitch(), random = NSSegmentedControl(labels: [L("무늬", "Patterns"), L("컬러", "Colors")], trackingMode: .selectOne, target: nil, action: nil)
+    let ground = NSSwitch(), hide = NSSwitch(), auto = NSSwitch(), random = NSSegmentedControl(labels: [L("무늬", "Patterns"), L("컬러", "Colors")], trackingMode: .selectOne, target: nil, action: nil)
 
     override init() {
         super.init()
@@ -746,9 +762,10 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
         let buttons = NSStackView(views: [gatherAll, mix]); buttons.distribution = .fillEqually; buttons.spacing = 8
         add(buttons)
         ground.target = self; ground.action = #selector(toggleGrounded); hide.target = self; hide.action = #selector(toggleHidden)
+        auto.target = self; auto.action = #selector(toggleAuto)
         random.target = self; random.action = #selector(setRandom(_:))
-        for c in [ground, hide] as [NSControl] { c.controlSize = .small }
-        add(line(text(L("날지 않기", "No flying")), ground)); add(line(text(L("모두 숨기기", "Hide all")), hide)); add(line(text(L("랜덤", "Random")), random)); add(rule())
+        for c in [ground, hide, auto] as [NSControl] { c.controlSize = .small }
+        add(line(text(L("날지 않기", "No flying")), ground)); add(line(text(L("모두 숨기기", "Hide all")), hide)); add(line(text(L("자동 켜기", "Auto-on")), auto)); add(line(text(L("랜덤", "Random")), random)); add(rule())
 
         // 투명도와 크기. steps 를 주면 그 수만큼의 눈금에만 멈춘다
         func bar(_ title: String, _ range: ClosedRange<Double>, _ action: Selector, steps: Int = 0, now: @escaping () -> Double, say: @escaping () -> String) {
@@ -865,7 +882,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     func refresh() {
         for s in sliders { s.view.doubleValue = s.now(); s.text.stringValue = s.say() }
-        ground.state = grounded ? .on : .off; hide.state = hidden ? .on : .off; random.selectedSegment = colorFirst ? 1 : 0
+        ground.state = grounded ? .on : .off; hide.state = hidden ? .on : .off; auto.state = setting("autoOn") as? Bool == true ? .on : .off; random.selectedSegment = colorFirst ? 1 : 0
         item.button?.appearsDisabled = hidden                // 숨긴 동안은 아이콘이 흐리다
         floatButton.contentTintColor = floating ? .controlAccentColor : nil
         allPets.forEach { $0.applyLook() }
@@ -904,6 +921,8 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     // 세션 파일을 고친 뒤에 부른다. 다음 틱을 기다리지 않고 펫과 판의 목록에 바로 반영한다 (기다리면 최대 1.5초 늦다)
     func catchUp() { sessions.sync(); poll() }
     @objc func toggleHidden() { hidden.toggle(); refresh() }
+    // 자동으로 켜기: 켜 두면 펫이 없는 세션에 첫 프롬프트가 들어올 때 펫이 켜진다 (--hook working)
+    @objc func toggleAuto() { setSetting("autoOn", auto.state == .on) }
     // 날지 않기: 펫이 바닥에만 있는다. 날기, 날아 내려오기, 풍선 타기, 창 타고 오르기를 고르지 않고 창 위에도 서지 않는다 (Pet.swift 의 grounded).
     // 켜는 순간 떠 있거나 매달려 있던 펫은 바로 떨어지고, 창 위에 서 있던 펫은 다음 틱에 떨어진다
     @objc func toggleGrounded() {
