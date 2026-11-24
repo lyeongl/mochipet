@@ -51,6 +51,12 @@ claude plugin install mochipet --marketplace lyeongl/mochipet
 claude plugin update mochipet@mochipet
 ```
 
+After updating, follow these steps.
+
+1. Quit Claude Desktop completely (`Cmd+Q`) and open it again. In a terminal, exit `claude` and run it again. Sessions that were already open keep using the old version until they restart.
+2. Run `/pet on` in any session. The pet app starts in the new version and a paw icon appears in the menu bar.
+3. To use Auto-on, click the paw icon and turn on "Auto-on". The switch stays on, and from the next update you can skip step 2: the pet turns on at the first prompt.
+
 ### Uninstall
 
 ```bash
