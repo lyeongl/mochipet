@@ -1130,7 +1130,6 @@ func paintProps(_ k: Look, _ body: NSRect, _ mouth: NSPoint, _ line: NSColor, do
 // 창 목록을 묻는 일이 펫 앱이 쓰는 CPU 의 대부분이라(펫 8마리에서 85%), 한 틱 안에서는 한 번만 묻고 모든 펫이 같이 쓴다
 let seenLock = NSLock()
 nonisolated(unsafe) var seenWindows: (at: Double, wins: [CGRect], pets: [(id: Int, rect: CGRect)]) = (0, [], [])
-var perch = 0       // 펫이 올라설 수 있는 우리 창(띄운 세션 목록)의 번호. 없으면 0
 func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
     seenLock.lock(); defer { seenLock.unlock() }
     let now = CFAbsoluteTimeGetCurrent()
@@ -1138,7 +1137,7 @@ func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
         seenWindows.at = now                                 // 묻는 동안 또 묻지 않는다
         // 창 목록을 묻는 데 3~12ms 가 걸려서 뒤쪽 스레드에서 묻는다. 앞쪽 스레드에서 물으면 목록 스크롤이 끊긴다
         // 펫은 한 틱 전의 창을 보고 움직인다
-        let primaryH = NSScreen.screens[0].frame.height, mine = perch, least = side   // CGWindow 좌표는 위가 0 이라 뒤집는다
+        let primaryH = NSScreen.screens[0].frame.height, least = side   // CGWindow 좌표는 위가 0 이라 뒤집는다
         DispatchQueue.global(qos: .userInitiated).async {
             let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
             var wins: [CGRect] = [], pets: [(id: Int, rect: CGRect)] = []
@@ -1146,7 +1145,7 @@ func screenWindows() -> (wins: [CGRect], pets: [(id: Int, rect: CGRect)]) {
                 guard (w[kCGWindowAlpha as String] as? Double ?? 1) > 0, let b = w[kCGWindowBounds as String] as? NSDictionary,
                       let q = CGRect(dictionaryRepresentation: b) else { continue }
                 let r = CGRect(x: q.minX, y: primaryH - q.maxY, width: q.width, height: q.height)
-                if w[kCGWindowLayer as String] as? Int == 0 || w[kCGWindowNumber as String] as? Int == mine {   // 일반 창과 띄운 세션 목록. Dock·메뉴 막대는 빠진다
+                if w[kCGWindowLayer as String] as? Int == 0 {   // 일반 창. 띄운 세션 목록도 일반 창이라 들어간다. Dock·메뉴 막대는 빠진다
                     if r.width >= least { wins.append(r) }
                 } else if w[kCGWindowOwnerName as String] as? String == "MochiPet", r.width == r.height, r.width >= 60,
                           let id = w[kCGWindowNumber as String] as? Int {   // 펫 창. 정사각형이라 이름표·메뉴 막대 아이콘과 구별된다

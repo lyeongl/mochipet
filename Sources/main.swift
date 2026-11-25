@@ -830,7 +830,6 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
         NSLayoutConstraint.activate([root.topAnchor.constraint(equalTo: glass.topAnchor, constant: bar - 4), root.bottomAnchor.constraint(equalTo: glass.bottomAnchor),
                                      root.leadingAnchor.constraint(equalTo: glass.leadingAnchor), root.trailingAnchor.constraint(equalTo: glass.trailingAnchor)])
         w.contentView = glass
-        perch = w.windowNumber                               // 펫이 이 창 위에도 올라선다 (Pet.swift 의 screenWindows)
         NotificationCenter.default.addObserver(self, selector: #selector(floatMoved), name: NSWindow.didMoveNotification, object: w)
         NotificationCenter.default.addObserver(self, selector: #selector(floatResized), name: NSWindow.didEndLiveResizeNotification, object: w)
         return w
