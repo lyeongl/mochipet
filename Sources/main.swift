@@ -800,15 +800,16 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
         return root
     }
 
-    // 띄운 창: 판의 머리말과 목록만 따로 떠 있는다. 모든 화면과 전체화면 위에 보이고, 옮긴 자리와 바꾼 크기를 기억한다
+    // 띄운 창: 판의 머리말과 목록만 따로 떠 있는다. 옮긴 자리와 바꾼 크기를 기억한다
     // 제목 막대를 투명하게 둔 보통 창이라 닫기·최소화·확대 버튼과 가장자리 크기 조절은 macOS 것을 그대로 쓴다
-    lazy var floatWin: NSPanel = {
-        let w = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
+    // 띄운 창은 일반 창이다. 다른 창 뒤로 가려지고, 띄운 데스크탑에만 있고, Mission Control 에 보인다
+    lazy var floatWin: NSWindow = {
+        let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
         w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.minSize = NSSize(width: 240, height: floatPad + float.rowHeight)   // 가장 작게는 한 줄이 보이는 크기
         w.toolbar = NSToolbar(); w.toolbarStyle = .unified; w.titlebarSeparatorStyle = .none   // 빈 도구 막대를 달면 제목 막대가 52pt 로 높아지고 창 버튼 둘레가 넓어진다
-        w.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)   // 펫(.floating)보다 한 칸 아래. 펫이 늘 이 창 앞에 보인다
         w.isOpaque = false; w.backgroundColor = .clear; w.hidesOnDeactivate = false; w.delegate = self
-        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]; w.isMovableByWindowBackground = true
+        w.isMovableByWindowBackground = true
         let glass = NSVisualEffectView(); glass.material = .fullScreenUI; glass.state = .active   // .popover 보다 뒤가 더 비친다
         let root = column(float.scroll); root.edgeInsets.top = 0; root.edgeInsets.bottom = 14   // 줄 안의 여백 6pt 와 더해 위아래가 20pt 로 같다
         float.scroll.automaticallyAdjustsContentInsets = false   // 제목 막대 아래라고 목록 위에 여백이 저절로 붙는 것을 끈다

@@ -27,7 +27,7 @@
 - **Plays on its own**: when idle, it walks, naps, fishes, rides a balloon, and more.
 - **Menu bar controls**: change opacity and size, keep pets on the ground, or hide them all.
 - **Auto-on**: turn on "Auto-on" in the menu bar, and a pet appears when you send the first prompt in a session, without `/pet on`. A session you turned off with `/pet off` stays off.
-- **Floating session list**: pop the session list out of the menu bar into a small window that stays above other windows, including full-screen ones.
+- **Floating session list**: pop the session list out of the menu bar into a small window of its own. It behaves like any other window: it goes behind other windows and shows up in Mission Control.
 
 ## Install
 
