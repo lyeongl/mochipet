@@ -1215,7 +1215,7 @@ final class PetView: NSView {
     // 전역 크기·투명도·숨김을 이 펫 창에 입힌다.
     func applyLook() {
         guard let w = window else { return }
-        w.alphaValue = opacity
+        w.alphaValue = opacity; nameTag?.alphaValue = opacity      // 이름표는 따로 뜬 창이라 같이 맞춘다
         if w.frame.width != side {       // 그림과 이름표는 새 크기에서 다시 만든다
             cache = [:]; hideTag()
             w.setFrame(NSRect(origin: origin, size: NSSize(width: side, height: side)), display: true)
@@ -1270,7 +1270,7 @@ final class PetView: NSView {
         let t = NSWindow(contentRect: NSRect(x: w.frame.midX - s.width / 2, y: w.frame.maxY - 2, width: s.width, height: s.height),
                          styleMask: .borderless, backing: .buffered, defer: false)
         t.isOpaque = false; t.backgroundColor = .clear; t.ignoresMouseEvents = true; t.isReleasedWhenClosed = false
-        t.contentView = text
+        t.contentView = text; t.alphaValue = opacity
         w.addChildWindow(t, ordered: .above)
         nameTag = t
     }
