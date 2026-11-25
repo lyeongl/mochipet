@@ -213,7 +213,12 @@ extension Pet {
             touching = true
             if abs(dx) < 1 { dx = Bool.random() ? 1 : -1 }       // 정확히 위아래로 겹쳤으면 아무 쪽으로나 굴러간다
             if pos.y - o.minY > 24 * scale || action.air || action.accel < 0 {   // 발이 상대보다 높이 있다
-                let d = max(hypot(dx, dy), 1)
+                let d = max(hypot(dx, dy), 1), x = o.midX + dx / d * reach(o) - half
+                // 화면 벽과 이 펫 사이에 끼었다. 굴러 내려갈 자리가 없어서 틱마다 굴렀다 떨어졌다만 되풀이하므로, 이 펫을 넘어 반대쪽으로 뛰어내린다
+                if x < area.minX || x > area.maxX {
+                    flip = x < area.minX; goal = o.midX + (flip ? 1 : -1) * (reach(o) + 8) - half
+                    start("hopoff"); rest = 10; return
+                }
                 pos = CGPoint(x: o.midX + dx / d * reach(o) - half, y: o.midY + max(dy, 0) / d * reach(o) - half)
                 flip = dx > 0                                    // 상대의 반대쪽을 본다
                 if name != "rolloff" { start("rolloff") }
@@ -1426,6 +1431,14 @@ func selftest() {
         out = p.pos.y == 0 && (p.pos.x < 240 - side * 0.6 || p.pos.x > 480 + side * 0.6)
     }
     precondition(out && seen.isSuperset(of: ["bump", "splat", "getup", "leap", "perch", "hopoff"]), "낀 펫이 빠져나오지 못함: \(seen)")
+    // 화면 벽과 다른 펫 사이로 떨어진 펫: 굴러 내려갈 자리가 없어도 거기 얹힌 채로 멈추지 않고 바닥까지 내려온다
+    let corner = [CGRect(x: 30, y: 0, width: side, height: side)]
+    p = Pet(pos: CGPoint(x: 0, y: 300)); p.start("fall"); out = false
+    for _ in 0..<400 where !out {
+        p.tick(in: area, floor: { _, _ in 0 }); p.meet(corner, in: area)
+        out = p.pos.y == 0 && !flying.contains(p.name) && p.action.accel >= 0
+    }
+    precondition(out, "벽과 펫 사이에 낀 펫이 내려오지 못함: \(p.name) \(p.pos)")
     // 노랑 보정은 노랑에서 연노랑을 그대로 내고, 30도 넘게 떨어진 색은 건드리지 않는다
     let rim = palette
     precondition(pastel(2, 100 / 360.0) == oklch(rim.yellow[2].L, rim.yellow[2].C, 100 / 360.0)
