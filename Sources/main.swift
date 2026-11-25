@@ -932,6 +932,14 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     }
 }
 
+// 펫 앱은 하나만 뜬다. 플러그인을 업데이트하면 버전 폴더가 달라져서, 예전 앱이 떠 있어도 open 이 새 앱을 하나 더 띄운다.
+// 더 새 버전이 남는다. 버전이 같으면 나중에 뜬 쪽이 남는다 (저장소에서 빌드한 앱으로 바꿔 띄울 때)
+func appVersion(_ b: Bundle?) -> String { b?.infoDictionary?["CFBundleShortVersionString"] as? String ?? "" }
+for other in NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "") where other.processIdentifier != getpid() {
+    if appVersion(other.bundleURL.flatMap(Bundle.init(url:))).compare(appVersion(.main), options: .numeric) == .orderedDescending { exit(0) }
+    other.terminate()
+}
+
 let app = NSApplication.shared
 let bar = Bar()                     // 펫을 만들기 전에 크기와 투명도를 읽어 둔다
 let sessions = Sessions()

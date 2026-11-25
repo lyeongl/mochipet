@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 APP=MochiPet.app
 BIN=$APP/Contents/MacOS/MochiPet
 
+# 버전은 plugin.json 에서 읽어 Info.plist 에 넣는다. 펫 앱이 둘 떴을 때 어느 쪽이 새 것인지 가리는 데 쓴다 (main.swift 의 appVersion)
+VERSION=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' .claude-plugin/plugin.json)
 mkdir -p "$APP/Contents/MacOS"
 swiftc -O Sources/*.swift -o "$BIN"
 cat > "$APP/Contents/Info.plist" <<EOF
@@ -15,6 +17,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <key>CFBundleExecutable</key><string>MochiPet</string>
 <key>CFBundleIdentifier</key><string>local.mochipet</string>
 <key>CFBundleName</key><string>MochiPet</string>
+<key>CFBundleShortVersionString</key><string>$VERSION</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSUIElement</key><true/>
 </dict></plist>
