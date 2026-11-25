@@ -470,6 +470,10 @@ func appIcon(_ side: CGFloat) -> NSImage {
 }
 
 // 펫 우클릭 판: 머리말(얼굴, 이름, 상태), 종류, 무늬, 컬러, 색 섞기, 이 펫 끄기. 메뉴 막대 판과 같은 모양으로 그린다
+// 띄운 창이 다른 데스크탑에 있으면 앱을 앞으로 가져오지 않는다. 가져오면 macOS 가 그 데스크탑으로 화면을 넘긴다
+// 그동안에는 스위치와 슬라이더가 회색으로 그려지지만 눌린다
+var windowElsewhere: Bool { NSApp.windows.contains { $0.isVisible && $0.level == .normal && !$0.isOnActiveSpace } }
+
 final class Card: NSObject, NSPopoverDelegate {
     let pop = NSPopover()
     var id = ""
@@ -543,7 +547,7 @@ final class Card: NSObject, NSPopoverDelegate {
         if pop.contentViewController == nil { let vc = NSViewController(); vc.view = box; pop.contentViewController = vc; pop.animates = false; pop.delegate = self }
         put(r)
         pop.show(relativeTo: spot.contentView!.bounds, of: spot.contentView!, preferredEdge: .maxX)
-        NSApp.activate(ignoringOtherApps: true)
+        if !windowElsewhere { NSApp.activate(ignoringOtherApps: true) }
         watch()
     }
     lazy var spot: NSPanel = {
@@ -862,7 +866,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     var opening: NSObjectProtocol?
     @objc func clicked() {
         guard opening == nil else { return }
-        if NSApp.isActive { return popMenu() }
+        if NSApp.isActive || windowElsewhere { return popMenu() }
         opening = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.popMenu() }
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in if self?.opening != nil { self?.popMenu() } }
