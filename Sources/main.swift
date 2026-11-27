@@ -472,7 +472,7 @@ func appIcon(_ side: CGFloat) -> NSImage {
 // 펫 우클릭 판: 머리말(얼굴, 이름, 상태), 종류, 무늬, 컬러, 색 섞기, 이 펫 끄기. 메뉴 막대 판과 같은 모양으로 그린다
 // 띄운 창이 다른 데스크탑에 있으면 앱을 앞으로 가져오지 않는다. 가져오면 macOS 가 그 데스크탑으로 화면을 넘긴다
 // 그동안에는 스위치와 슬라이더가 회색으로 그려지지만 눌린다
-var windowElsewhere: Bool { NSApp.windows.contains { $0.isVisible && $0.level == .normal && !$0.isOnActiveSpace } }
+var windowElsewhere: Bool { NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) && !$0.isOnActiveSpace } }
 
 final class Card: NSObject, NSPopoverDelegate {
     let pop = NSPopover()
@@ -714,6 +714,8 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     let floatPad: CGFloat = 62                              // 띄운 창에서 목록 말고 위아래가 차지하는 높이: 제목 막대 쪽 48 + 아래 여백 14
     var floating = false                                    // 띄운 창이 떠 있는지
     lazy var floatButton = NSButton(image: symbol("pip.exit"), target: self, action: #selector(toggleFloat))
+    lazy var pinButton = NSButton(image: symbol("pin"), target: self, action: #selector(togglePin))
+    var pinned: Bool { setting("floatPinned") as? Bool == true }   // 띄운 창을 다른 창 위에 고정했는지
     let ground = NSSwitch(), hide = NSSwitch(), auto = NSSwitch(), random = NSSegmentedControl(labels: [L("무늬", "Patterns"), L("컬러", "Colors")], trackingMode: .selectOne, target: nil, action: nil)
 
     override init() {
@@ -806,7 +808,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     // 띄운 창: 판의 머리말과 목록만 따로 떠 있는다. 옮긴 자리와 바꾼 크기를 기억한다
     // 제목 막대를 투명하게 둔 보통 창이라 닫기·최소화·확대 버튼과 가장자리 크기 조절은 macOS 것을 그대로 쓴다
-    // 띄운 창은 일반 창이다. 다른 창 뒤로 가려지고, 띄운 데스크탑에만 있고, Mission Control 에 보인다
+    // 띄운 창은 일반 창이다. 다른 창 뒤로 가려지고, 띄운 데스크탑에만 있고, Mission Control 에 보인다. 핀을 켜면 다른 창 위에 뜬다
     lazy var floatWin: NSWindow = {
         let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
@@ -826,10 +828,18 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
         float.subtitle.translatesAutoresizingMaskIntoConstraints = false; glass.addSubview(float.subtitle)
         float.subtitle.lineBreakMode = .byTruncatingTail; float.subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)   // 좁은 창에서는 줄여 적는다
         NSLayoutConstraint.activate([float.subtitle.leadingAnchor.constraint(equalTo: glass.leadingAnchor, constant: 92), float.subtitle.centerYAnchor.constraint(equalTo: glass.topAnchor, constant: bar / 2),
-                                     float.subtitle.trailingAnchor.constraint(lessThanOrEqualTo: glass.trailingAnchor, constant: -16)])
+                                     float.subtitle.trailingAnchor.constraint(lessThanOrEqualTo: glass.trailingAnchor, constant: -48)])
         NSLayoutConstraint.activate([root.topAnchor.constraint(equalTo: glass.topAnchor, constant: bar - 4), root.bottomAnchor.constraint(equalTo: glass.bottomAnchor),
                                      root.leadingAnchor.constraint(equalTo: glass.leadingAnchor), root.trailingAnchor.constraint(equalTo: glass.trailingAnchor)])
         w.contentView = glass
+        // 고정 핀은 창 버튼이 있는 제목 막대 뷰에 단다. 제목 막대 자리는 내용 쪽 버튼이 눌리지 않는다
+        // 창 버튼과 같은 가로줄, 줄의 ✕ 와 같은 세로줄(오른쪽에서 27.5pt)에 온다
+        if let close = w.standardWindowButton(.closeButton), let top = close.superview {
+            pinButton.isBordered = false; pinButton.toolTip = L("다른 창 위에 고정", "Keep on top")
+            pinButton.translatesAutoresizingMaskIntoConstraints = false; top.addSubview(pinButton)
+            NSLayoutConstraint.activate([pinButton.centerYAnchor.constraint(equalTo: close.centerYAnchor), pinButton.centerXAnchor.constraint(equalTo: top.trailingAnchor, constant: -27.5)])
+        }
+        w.level = pinned ? .floating : .normal
         NotificationCenter.default.addObserver(self, selector: #selector(floatMoved), name: NSWindow.didMoveNotification, object: w)
         NotificationCenter.default.addObserver(self, selector: #selector(floatResized), name: NSWindow.didEndLiveResizeNotification, object: w)
         return w
@@ -844,6 +854,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc func floatResized() { floatWin.setFrame(wholeRows(floatWin.frame), display: true, animate: true); floatMoved() }
     @objc func floatMoved() { guard floating else { return }; let f = floatWin.frame; setSetting("floatFrame", [f.minX, f.minY, f.width, f.height].map { Double($0) }) }
     func windowShouldClose(_ w: NSWindow) -> Bool { toggleFloat(); return false }   // 빨강 버튼은 창을 없애지 않고 띄우기를 끈다
+    @objc func togglePin() { setSetting("floatPinned", !pinned); floatWin.level = pinned ? .floating : .normal; refresh() }
     @objc func toggleFloat() {
         floating.toggle(); setSetting("floating", floating)
         if floating {
@@ -889,6 +900,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
         ground.state = grounded ? .on : .off; hide.state = hidden ? .on : .off; auto.state = setting("autoOn") as? Bool == true ? .on : .off; random.selectedSegment = colorFirst ? 1 : 0
         item.button?.appearsDisabled = hidden                // 숨긴 동안은 아이콘이 흐리다
         floatButton.contentTintColor = floating ? .controlAccentColor : nil
+        pinButton.image = symbol(pinned ? "pin.fill" : "pin"); pinButton.contentTintColor = pinned ? .controlAccentColor : nil
         allPets.forEach { $0.applyLook() }
     }
 
