@@ -176,6 +176,10 @@ private func floatPicture(dark: Bool) -> NSBitmapImageRep {
         for (i, c) in [NSColor(red: 1, green: 0.37, blue: 0.34, alpha: 1), NSColor(red: 1, green: 0.74, blue: 0.18, alpha: 1), NSColor(red: 0.16, green: 0.78, blue: 0.25, alpha: 1)].enumerated() {
             c.setFill(); NSBezierPath(ovalIn: NSRect(x: 12 + 20 + CGFloat(i) * 23, y: 16 + size.height - 33, width: 14, height: 14)).fill()
         }
+        // 고정 핀도 제목 막대에 붙어 있어서 같이 찍히지 않는다. 같은 자리(오른쪽에서 27.5pt, 창 버튼과 같은 가로줄)에 그린다
+        if let pin = NSImage(systemSymbolName: "pin", accessibilityDescription: nil)?.withSymbolConfiguration(.init(paletteColors: [NSColor(white: dark ? 0.75 : 0.35, alpha: 1)])) {
+            pin.draw(in: NSRect(x: 12 + size.width - 27.5 - pin.size.width / 2, y: 16 + size.height - 26 - pin.size.height / 2, width: pin.size.width, height: pin.size.height))
+        }
     }
 }
 
