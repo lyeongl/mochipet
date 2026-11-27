@@ -865,7 +865,10 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
             let saved = (setting("floatFrame") as? [Double]).flatMap { $0.count == 4 ? NSRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
             let f = saved.flatMap { r in NSScreen.screens.contains { $0.frame.intersects(r) } ? r : nil }      // 그 화면이 없어졌으면 처음 자리로
             floatWin.setFrame(wholeRows(f ?? NSRect(x: v.maxX - 324, y: v.maxY - 460, width: 304, height: 440)), display: true)
+            // 일반 창은 처음 뜬 데스크탑에 묶여 다시 켜도 그쪽에 뜬다. 잠깐 모든 데스크탑에 두고 띄운 뒤 풀면 지금 데스크탑에 남는다
+            if !pinned { floatWin.collectionBehavior = .canJoinAllSpaces }
             floatWin.orderFrontRegardless()
+            DispatchQueue.main.async { [weak self] in guard let self else { return }; self.pin(self.floatWin) }
         } else { floatWin.orderOut(nil) }
         refresh()
     }
