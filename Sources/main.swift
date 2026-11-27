@@ -808,7 +808,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
 
     // 띄운 창: 판의 머리말과 목록만 따로 떠 있는다. 옮긴 자리와 바꾼 크기를 기억한다
     // 제목 막대를 투명하게 둔 보통 창이라 닫기·최소화·확대 버튼과 가장자리 크기 조절은 macOS 것을 그대로 쓴다
-    // 띄운 창은 일반 창이다. 다른 창 뒤로 가려지고, 띄운 데스크탑에만 있고, Mission Control 에 보인다. 핀을 켜면 다른 창 위에 뜬다
+    // 띄운 창은 일반 창이다. 다른 창 뒤로 가려지고, 띄운 데스크탑에만 있고, Mission Control 에 보인다. 핀을 켜면 다른 창 위에 뜨고 모든 데스크탑에 따라온다
     lazy var floatWin: NSWindow = {
         let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
@@ -839,7 +839,7 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
             pinButton.translatesAutoresizingMaskIntoConstraints = false; top.addSubview(pinButton)
             NSLayoutConstraint.activate([pinButton.centerYAnchor.constraint(equalTo: close.centerYAnchor), pinButton.centerXAnchor.constraint(equalTo: top.trailingAnchor, constant: -27.5)])
         }
-        w.level = pinned ? .floating : .normal
+        pin(w)
         NotificationCenter.default.addObserver(self, selector: #selector(floatMoved), name: NSWindow.didMoveNotification, object: w)
         NotificationCenter.default.addObserver(self, selector: #selector(floatResized), name: NSWindow.didEndLiveResizeNotification, object: w)
         return w
@@ -854,7 +854,9 @@ final class Bar: NSObject, NSWindowDelegate, NSMenuDelegate {
     @objc func floatResized() { floatWin.setFrame(wholeRows(floatWin.frame), display: true, animate: true); floatMoved() }
     @objc func floatMoved() { guard floating else { return }; let f = floatWin.frame; setSetting("floatFrame", [f.minX, f.minY, f.width, f.height].map { Double($0) }) }
     func windowShouldClose(_ w: NSWindow) -> Bool { toggleFloat(); return false }   // 빨강 버튼은 창을 없애지 않고 띄우기를 끈다
-    @objc func togglePin() { setSetting("floatPinned", !pinned); floatWin.level = pinned ? .floating : .normal; refresh() }
+    // 고정하면 다른 창 위에 뜨고 데스크탑을 넘겨도 따라온다. 풀면 일반 창으로 돌아가 지금 데스크탑에 남는다
+    func pin(_ w: NSWindow) { w.level = pinned ? .floating : .normal; w.collectionBehavior = pinned ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [] }
+    @objc func togglePin() { setSetting("floatPinned", !pinned); pin(floatWin); refresh() }
     @objc func toggleFloat() {
         floating.toggle(); setSetting("floating", floating)
         if floating {
